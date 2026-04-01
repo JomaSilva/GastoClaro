@@ -17,6 +17,14 @@ type ImagePayload = {
   mimeType: string;
 };
 
+type PromptNewsItem = {
+  title: string;
+  source?: string;
+  summary?: string;
+  publishedAt?: string;
+  url?: string;
+};
+
 function getAnthropicApiKey(): string {
   const apiKey = process.env.ANTHROPIC_API_KEY;
 
@@ -70,6 +78,25 @@ function extractJson<T>(raw: string, fallback: T): T {
       return fallback;
     }
   }
+}
+
+function compactNewsForPrompt(news: any[], limit: number): PromptNewsItem[] {
+  return (Array.isArray(news) ? news : [])
+    .slice(0, limit)
+    .map((item) => {
+      if (typeof item === "string") {
+        return { title: item };
+      }
+
+      return {
+        title: item?.title || "",
+        source: item?.source,
+        summary: item?.summary,
+        publishedAt: item?.publishedAt,
+        url: item?.url,
+      };
+    })
+    .filter((item) => item.title);
 }
 
 const responseSchema = {
@@ -194,7 +221,11 @@ Para cada ativo, determine o sinal (COMPRA, VENDA ou NEUTRO) e a força da tese 
 A decisão DEVE ser baseada no contexto das notícias e cenário macro, não apenas no preço.
 
 Dados dos ativos:
-${JSON.stringify(assetsWithNews.map((data) => ({ symbol: data.symbol, change: data.change, news: data.news })), null, 2)}
+${JSON.stringify(assetsWithNews.map((data) => ({
+  symbol: data.symbol,
+  change: data.change,
+  news: compactNewsForPrompt(data.news, 5),
+})), null, 2)}
 
 Retorne EXATAMENTE um array JSON neste formato, sem formatação markdown:
 [
@@ -233,6 +264,12 @@ Retorne EXATAMENTE um array JSON neste formato, sem formatação markdown:
 }
 
 export async function analyzeAsset(symbol: string, contextData: any): Promise<string> {
+  const curatedNews = compactNewsForPrompt(contextData.news, 12);
+  const newsCoverage = contextData.newsSummary || {
+    totalItems: curatedNews.length,
+    sources: Array.from(new Set(curatedNews.map((item) => item.source).filter(Boolean))),
+  };
+
   const systemInstruction = `
 Você é o motor analítico principal de uma plataforma de investimentos com IA.
 
@@ -286,6 +323,11 @@ NÚCLEO DA ANÁLISE
 7) TÉCNICO: Apenas para confirmar tendência, momentum ou divergência.
 8) RISCO/RETORNO: Avalie se o prêmio compensa o risco.
 
+TRATAMENTO DAS FONTES
+- O bloco NEWS_CONTEXT combina fontes diferentes de mercado, incluindo Yahoo Finance e portais financeiros especializados.
+- Quando múltiplas fontes apontarem para a mesma tese, trate isso como confirmação moderada.
+- Quando houver conflito entre fontes, destaque a divergência e reduza a confiança.
+
 FORMATO DA RESPOSTA
 NÃO responda em JSON.
 NÃO entregue tabela crua.
@@ -302,8 +344,11 @@ ${JSON.stringify(contextData.quote || {}, null, 2)}
 FUNDAMENTAL_DATA & VALUATION:
 ${JSON.stringify(contextData.summary || {}, null, 2)}
 
+NEWS_COVERAGE:
+${JSON.stringify(newsCoverage, null, 2)}
+
 NEWS_CONTEXT:
-${JSON.stringify(contextData.news || [], null, 2)}
+${JSON.stringify(curatedNews, null, 2)}
 
 Se algum bloco estiver vazio ou incompleto, indique isso na sua análise e ajuste a confiança adequadamente.
 `;

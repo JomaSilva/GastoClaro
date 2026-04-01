@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import YahooFinance from "yahoo-finance2";
 import { analyzeAsset, generateBatchSignals, processExpenses } from "./server/anthropic";
+import { fetchAssetNews, summarizeNewsCoverage } from "./server/news";
 
 const yahooFinance = new YahooFinance();
 
@@ -94,13 +95,15 @@ async function startServer() {
               console.warn(`No quote returned for ${symbol}`);
               return null;
             }
-            let news = [];
-            try {
-              const search = await yahooFinance.search(symbol);
-              news = search.news?.slice(0, 3).map((n: any) => n.title) || [];
-            } catch (e) {
-              console.warn(`Could not fetch news for ${symbol}`);
-            }
+
+            const news = await fetchAssetNews({
+              symbol,
+              yahooFinance,
+              shortName: quote.shortName,
+              longName: quote.longName,
+              maxItems: 5,
+            });
+
             return {
               symbol,
               name: quote.shortName || quote.longName || symbol,
@@ -157,19 +160,20 @@ async function startServer() {
         console.warn(`Could not fetch quoteSummary for ${symbol}`);
       }
 
-      let news = [];
-      try {
-        const search = await yahooFinance.search(symbol);
-        news = search.news || [];
-      } catch (e) {
-        console.warn(`Could not fetch news for ${symbol}`);
-      }
+      const news = await fetchAssetNews({
+        symbol,
+        yahooFinance,
+        shortName: quote?.shortName,
+        longName: quote?.longName,
+        maxItems: 12,
+      });
 
       res.json({
         symbol,
         quote,
         summary,
-        news
+        news,
+        newsSummary: summarizeNewsCoverage(news),
       });
     } catch (error) {
       console.error(`Error fetching context for ${req.params.symbol}:`, error);
