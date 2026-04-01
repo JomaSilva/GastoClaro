@@ -1,39 +1,52 @@
 import { ExpenseReport } from "../types";
 
-const apiKey = process.env.OPENAI_API_KEY || "";
-const OPENAI_MODEL = "gpt-4.1-mini";
+const apiKey = process.env.ANTHROPIC_API_KEY || "";
+const CLAUDE_MODEL = "claude-sonnet-4-20250514";
 
-type OpenAIMessage = {
-  role: "system" | "user";
+type ClaudeMessage = {
+  role: "user" | "assistant";
   content: string;
 };
 
-async function callOpenAI(messages: OpenAIMessage[], options?: { temperature?: number; responseFormat?: any }): Promise<string> {
+type ClaudeContentBlock = {
+  type: "text" | "tool_use";
+  text?: string;
+};
+
+async function callClaude(messages: ClaudeMessage[], options?: { temperature?: number; systemPrompt?: string }): Promise<string> {
   if (!apiKey) {
-    throw new Error("OPENAI_API_KEY não configurada.");
+    throw new Error("ANTHROPIC_API_KEY não configurada.");
   }
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const body: Record<string, unknown> = {
+    model: CLAUDE_MODEL,
+    max_tokens: 4096,
+    messages,
+    temperature: options?.temperature ?? 0.2,
+  };
+
+  if (options?.systemPrompt) {
+    body.system = options.systemPrompt;
+  }
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
     },
-    body: JSON.stringify({
-      model: OPENAI_MODEL,
-      messages,
-      temperature: options?.temperature ?? 0.2,
-      response_format: options?.responseFormat,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
     const errorBody = await response.text();
-    throw new Error(`Erro na API OpenAI (${response.status}): ${errorBody}`);
+    throw new Error(`Erro na API Anthropic (${response.status}): ${errorBody}`);
   }
 
   const data = await response.json();
-  return data?.choices?.[0]?.message?.content || "";
+  const textBlock = (data?.content as ClaudeContentBlock[] | undefined)?.find((block) => block.type === "text");
+  return textBlock?.text || "";
 }
 
 function extractJson<T>(raw: string, fallback: T): T {
@@ -127,14 +140,13 @@ IMAGENS (base64 + mime):
 ${JSON.stringify(imagesData || [])}
 `;
 
-  const content = await callOpenAI(
+  const systemPrompt = `Você é um assistente financeiro. Responda APENAS com JSON válido, sem formatação markdown, sem texto adicional. O JSON deve seguir exatamente este schema: ${JSON.stringify(responseSchema.schema)}`;
+
+  const content = await callClaude(
     [{ role: "user", content: prompt }],
     {
       temperature: 0.1,
-      responseFormat: {
-        type: "json_schema",
-        json_schema: responseSchema,
-      },
+      systemPrompt,
     }
   );
 
@@ -186,9 +198,12 @@ Retorne EXATAMENTE um array JSON neste formato, sem formatação markdown:
 `;
 
     try {
-      const content = await callOpenAI(
+      const content = await callClaude(
         [{ role: "user", content: prompt }],
-        { temperature: 0.1, responseFormat: { type: "json_object" } }
+        {
+          temperature: 0.1,
+          systemPrompt: "Você é um analista financeiro. Responda APENAS com JSON válido, sem formatação markdown.",
+        }
       );
       const parsed = extractJson<any>(content, []);
       aiResults = Array.isArray(parsed) ? parsed : [];
@@ -283,12 +298,14 @@ ${JSON.stringify(contextData.news || [], null, 2)}
 Se algum bloco estiver vazio ou incompleto, indique isso na sua análise e ajuste a confiança adequadamente.
 `;
 
-  const content = await callOpenAI(
+  const content = await callClaude(
     [
-      { role: "system", content: systemInstruction },
       { role: "user", content: prompt }
     ],
-    { temperature: 0.2 }
+    {
+      temperature: 0.2,
+      systemPrompt: systemInstruction,
+    }
   );
 
   return content || "Não foi possível gerar a análise.";

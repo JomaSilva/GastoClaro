@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Send, Loader2, RefreshCw, TrendingUp, AlertCircle, Image as ImageIcon, X, Upload, Download, FileSpreadsheet, Check, Zap, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { processExpenses } from '../services/gemini';
+import { processExpenses } from '../services/claude';
 import { SIGNALS } from '../constants/investments';
 import { ExpenseReport } from '../types';
 import { ExpenseTable } from '../components/ExpenseTable';

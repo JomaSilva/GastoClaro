@@ -24,7 +24,7 @@ import { useTheme } from '../components/ThemeProvider';
 import axios from 'axios';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import ReactMarkdown from 'react-markdown';
-import { analyzeAsset, generateBatchSignals } from '../services/gemini';
+import { analyzeAsset, generateBatchSignals } from '../services/claude';
 
 import { SIGNALS as INITIAL_SIGNALS, SENTIMENT_NEWS } from '../constants/investments';
 
