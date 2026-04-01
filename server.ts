@@ -1,12 +1,17 @@
 import express from "express";
+import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import YahooFinance from "yahoo-finance2";
+import { analyzeAsset, generateBatchSignals, processExpenses } from "./server/anthropic";
 
 const yahooFinance = new YahooFinance();
 
 console.log(">>> SERVER BOOTING...");
+
+dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,9 +20,62 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  app.use(express.json({ limit: "25mb" }));
+
   // API routes
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  app.post("/api/ai/process-expenses", async (req, res) => {
+    try {
+      const { text = "", imagesData = [] } = req.body ?? {};
+
+      if (typeof text !== "string" || !Array.isArray(imagesData)) {
+        res.status(400).json({ error: "Payload inválido para processar gastos." });
+        return;
+      }
+
+      const report = await processExpenses(text, imagesData);
+      res.json(report);
+    } catch (error) {
+      console.error("Error in /api/ai/process-expenses:", error);
+      res.status(500).json({ error: error instanceof Error ? error.message : "Falha ao processar gastos." });
+    }
+  });
+
+  app.post("/api/ai/generate-batch-signals", async (req, res) => {
+    try {
+      const { marketData = [] } = req.body ?? {};
+
+      if (!Array.isArray(marketData)) {
+        res.status(400).json({ error: "Payload inválido para gerar sinais." });
+        return;
+      }
+
+      const results = await generateBatchSignals(marketData);
+      res.json(results);
+    } catch (error) {
+      console.error("Error in /api/ai/generate-batch-signals:", error);
+      res.status(500).json({ error: error instanceof Error ? error.message : "Falha ao gerar sinais." });
+    }
+  });
+
+  app.post("/api/ai/analyze-asset", async (req, res) => {
+    try {
+      const { symbol, contextData } = req.body ?? {};
+
+      if (typeof symbol !== "string" || !symbol.trim()) {
+        res.status(400).json({ error: "Payload inválido para analisar ativo." });
+        return;
+      }
+
+      const analysis = await analyzeAsset(symbol, contextData ?? {});
+      res.json({ analysis });
+    } catch (error) {
+      console.error("Error in /api/ai/analyze-asset:", error);
+      res.status(500).json({ error: error instanceof Error ? error.message : "Falha ao analisar ativo." });
+    }
   });
 
   app.get("/api/market-data", async (req, res) => {
