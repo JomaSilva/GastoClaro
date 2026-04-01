@@ -1,0 +1,126 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required) - immutable
+    //   - email: string (required) - immutable
+    //   - displayName: string (optional)
+    //   - photoURL: string (optional)
+    //   - createdAt: timestamp (required) - immutable
+    //
+    // Collection: users/{userId}/reports
+    // Document ID: {reportId}
+    // Fields:
+    //   - id: string (required) - immutable
+    //   - userId: string (required) - immutable
+    //   - createdAt: timestamp (required) - immutable
+    //   - updatedAt: timestamp (required)
+    //   - sourceText: string (required)
+    //   - raw_items: list (optional)
+    //   - categorized_items: list (required)
+    //   - category_totals: list (required)
+    //   - total_amount: number (required)
+    //   - highest_category: string (optional)
+    //   - insights: list (optional)
+    //   - recommendations: list (optional)
+    //   - monthReference: string (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser(data) {
+      return data.uid is string && data.uid.size() > 0 && data.uid.size() < 100 &&
+             data.email is string && isValidEmail(data.email) &&
+             data.createdAt is timestamp &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100)) &&
+             (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() < 1000));
+    }
+
+    function isValidReport(data) {
+      return data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 100 &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp &&
+             data.sourceText is string && data.sourceText.size() < 50000 &&
+             data.categorized_items is list && data.categorized_items.size() < 1000 &&
+             data.category_totals is list && data.category_totals.size() < 100 &&
+             data.total_amount is number && data.total_amount >= 0 &&
+             data.monthReference is string && data.monthReference.size() < 20 &&
+             (!('raw_items' in data) || (data.raw_items is list && data.raw_items.size() < 1000)) &&
+             (!('highest_category' in data) || (data.highest_category is string && data.highest_category.size() < 100)) &&
+             (!('insights' in data) || (data.insights is list && data.insights.size() < 100)) &&
+             (!('recommendations' in data) || (data.recommendations is list && data.recommendations.size() < 100));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) &&
+                    hasRequiredFields(['uid', 'email', 'createdAt']) &&
+                    isValidUser(request.resource.data) &&
+                    uidUnchanged();
+      allow update: if isOwner(userId) &&
+                    isValidUser(request.resource.data) &&
+                    uidNotModified() &&
+                    areImmutableFieldsUnchanged(['uid', 'email', 'createdAt']);
+      allow delete: if isOwner(userId);
+
+      match /reports/{reportId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+                      hasRequiredFields(['id', 'userId', 'createdAt', 'updatedAt', 'sourceText', 'categorized_items', 'category_totals', 'total_amount', 'monthReference']) &&
+                      isValidReport(request.resource.data) &&
+                      request.resource.data.userId == request.auth.uid;
+        allow update: if isOwner(userId) &&
+                      isValidReport(request.resource.data) &&
+                      areImmutableFieldsUnchanged(['id', 'userId', 'createdAt']);
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}

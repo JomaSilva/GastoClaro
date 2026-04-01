@@ -1,0 +1,55 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap');
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@variant dark (&:where(.dark, .dark *), :where(.dark, .dark *) &);
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Playfair Display", ui-serif, Georgia, serif;
+  
+  --color-brand-50: #fcf9f2;
+  --color-brand-100: #f8f1e1;
+  --color-brand-200: #f1e0c0;
+  --color-brand-300: #e8ca99;
+  --color-brand-400: #dfb06b;
+  --color-brand-500: #d49844;
+  --color-brand-600: #c58136;
+  --color-brand-700: #a4632f;
+  --color-brand-800: #85502d;
+  --color-brand-900: #6c4227;
+  --color-brand-950: #3e2213;
+
+  --color-gold-400: #D4AF37;
+  --color-gold-500: #C5A028;
+  --color-gold-600: #AA8A22;
+}
+
+@layer base {
+  body {
+    @apply bg-zinc-50 text-zinc-900 antialiased transition-colors duration-300 dark:bg-[#09090b] dark:text-zinc-100;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading tracking-tight;
+  }
+}
+
+.glass {
+  @apply bg-white/60 backdrop-blur-xl border border-zinc-200/50 dark:bg-zinc-900/40 dark:border-zinc-800/50;
+}
+
+.card-shadow {
+  box-shadow: 0 8px 32px -4px rgba(0, 0, 0, 0.04);
+}
+.dark .card-shadow {
+  box-shadow: 0 8px 32px -4px rgba(0, 0, 0, 0.2);
+}
+
+.gold-gradient {
+  @apply bg-gradient-to-r from-brand-400 via-brand-500 to-brand-600 bg-clip-text text-transparent;
+}
+
+.gold-gradient-bg {
+  @apply bg-gradient-to-r from-brand-400 via-brand-500 to-brand-600 text-white;
+}
