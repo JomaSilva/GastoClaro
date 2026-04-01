@@ -1,103 +1,153 @@
-import { GoogleGenAI, Type } from "@google/genai";
 import { ExpenseReport } from "../types";
 
-const apiKey = process.env.GEMINI_API_KEY || "";
-const genAI = new GoogleGenAI({ apiKey });
+const apiKey = process.env.OPENAI_API_KEY || "";
+const OPENAI_MODEL = "gpt-4.1-mini";
+
+type OpenAIMessage = {
+  role: "system" | "user";
+  content: string;
+};
+
+async function callOpenAI(messages: OpenAIMessage[], options?: { temperature?: number; responseFormat?: any }): Promise<string> {
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY não configurada.");
+  }
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      messages,
+      temperature: options?.temperature ?? 0.2,
+      response_format: options?.responseFormat,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Erro na API OpenAI (${response.status}): ${errorBody}`);
+  }
+
+  const data = await response.json();
+  return data?.choices?.[0]?.message?.content || "";
+}
+
+function extractJson<T>(raw: string, fallback: T): T {
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    const clean = raw.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
+    try {
+      return JSON.parse(clean) as T;
+    } catch {
+      return fallback;
+    }
+  }
+}
 
 const responseSchema = {
-  type: Type.OBJECT,
-  properties: {
-    raw_items: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
-      description: "Lista de itens extraídos do texto original"
-    },
-    categorized_items: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          id: { type: Type.STRING },
-          description: { type: Type.STRING },
-          amount: { type: Type.NUMBER },
-          category: { type: Type.STRING }
-        },
-        required: ["id", "description", "amount", "category"]
+  name: "expense_report",
+  schema: {
+    type: "object",
+    properties: {
+      raw_items: {
+        type: "array",
+        items: { type: "string" },
+        description: "Lista de itens extraídos do texto original"
+      },
+      categorized_items: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            description: { type: "string" },
+            amount: { type: "number" },
+            category: { type: "string" }
+          },
+          required: ["id", "description", "amount", "category"],
+          additionalProperties: false
+        }
+      },
+      category_totals: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            category: { type: "string" },
+            amount: { type: "number" }
+          },
+          required: ["category", "amount"],
+          additionalProperties: false
+        }
+      },
+      total_amount: { type: "number" },
+      highest_category: { type: "string" },
+      insights: {
+        type: "array",
+        items: { type: "string" }
+      },
+      recommendations: {
+        type: "array",
+        items: { type: "string" }
       }
     },
-    category_totals: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          category: { type: Type.STRING },
-          amount: { type: Type.NUMBER }
-        },
-        required: ["category", "amount"]
-      }
-    },
-    total_amount: { type: Type.NUMBER },
-    highest_category: { type: Type.STRING },
-    insights: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING }
-    },
-    recommendations: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING }
-    }
+    required: [
+      "raw_items",
+      "categorized_items",
+      "category_totals",
+      "total_amount",
+      "highest_category",
+      "insights",
+      "recommendations"
+    ],
+    additionalProperties: false
   },
-  required: [
-    "raw_items", 
-    "categorized_items", 
-    "category_totals", 
-    "total_amount", 
-    "highest_category", 
-    "insights", 
-    "recommendations"
-  ]
+  strict: true
 };
 
 export async function processExpenses(text: string, imagesData?: { data: string, mimeType: string }[]): Promise<ExpenseReport> {
-  const model = "gemini-3-flash-preview";
-  
   const prompt = `
-    Analise o seguinte conteúdo de gastos pessoais e extraia as informações de forma estruturada.
-    ${text ? `Texto fornecido: "${text}"` : "Analise as imagens fornecidas (faturas, extratos ou comprovantes)."}
-    
-    Categorias permitidas: alimentação, transporte, moradia, saúde, lazer, educação, compras, outros.
-    Se não tiver certeza da categoria, use "outros".
-    Identifique valores monetários e descrições.
-    Gere insights sobre os gastos e recomendações para economizar.
-    
-    Se houver imagens, extraia todos os gastos visíveis nelas, ignorando pagamentos de fatura (que são apenas transferências) e focando em compras reais.
-    Combine os dados do texto e de todas as imagens em um único relatório consolidado.
-  `;
+Analise o seguinte conteúdo de gastos pessoais e extraia as informações de forma estruturada.
+${text ? `Texto fornecido: "${text}"` : "Analise as imagens fornecidas (faturas, extratos ou comprovantes)."}
 
-  const parts: any[] = [{ text: prompt }];
-  
-  if (imagesData && imagesData.length > 0) {
-    imagesData.forEach(img => {
-      parts.push({
-        inlineData: {
-          data: img.data,
-          mimeType: img.mimeType
-        }
-      });
-    });
-  }
+Categorias permitidas: alimentação, transporte, moradia, saúde, lazer, educação, compras, outros.
+Se não tiver certeza da categoria, use "outros".
+Identifique valores monetários e descrições.
+Gere insights sobre os gastos e recomendações para economizar.
 
-  const response = await genAI.models.generateContent({
-    model,
-    contents: [{ parts }],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: responseSchema as any
+Se houver imagens, extraia todos os gastos visíveis nelas, ignorando pagamentos de fatura (que são apenas transferências) e focando em compras reais.
+Combine os dados do texto e de todas as imagens em um único relatório consolidado.
+
+IMAGENS (base64 + mime):
+${JSON.stringify(imagesData || [])}
+`;
+
+  const content = await callOpenAI(
+    [{ role: "user", content: prompt }],
+    {
+      temperature: 0.1,
+      responseFormat: {
+        type: "json_schema",
+        json_schema: responseSchema,
+      },
     }
+  );
+
+  const result = extractJson<any>(content, {
+    raw_items: [],
+    categorized_items: [],
+    category_totals: [],
+    total_amount: 0,
+    highest_category: "outros",
+    insights: [],
+    recommendations: [],
   });
 
-  const result = JSON.parse(response.text || "{}");
-  
   return {
     ...result,
     id: crypto.randomUUID(),
@@ -109,8 +159,6 @@ export async function processExpenses(text: string, imagesData?: { data: string,
 }
 
 export async function generateBatchSignals(marketData: any[]): Promise<any[]> {
-  const model = "gemini-3-flash-preview";
-  
   const assetsWithNews = marketData.filter(d => d.news && d.news.length > 0);
   const assetsWithoutNews = marketData.filter(d => !d.news || d.news.length === 0);
 
@@ -135,18 +183,15 @@ Retorne EXATAMENTE um array JSON neste formato, sem formatação markdown:
     "rationale": "Justificativa curta (1 frase) baseada nas notícias e macro."
   }
 ]
-    `;
+`;
 
     try {
-      const response = await genAI.models.generateContent({
-        model,
-        contents: [{ parts: [{ text: prompt }] }],
-        config: {
-          responseMimeType: "application/json",
-          temperature: 0.1,
-        }
-      });
-      aiResults = JSON.parse(response.text || "[]");
+      const content = await callOpenAI(
+        [{ role: "user", content: prompt }],
+        { temperature: 0.1, responseFormat: { type: "json_object" } }
+      );
+      const parsed = extractJson<any>(content, []);
+      aiResults = Array.isArray(parsed) ? parsed : [];
     } catch (e) {
       console.error("Error generating/parsing batch signals", e);
     }
@@ -163,8 +208,6 @@ Retorne EXATAMENTE um array JSON neste formato, sem formatação markdown:
 }
 
 export async function analyzeAsset(symbol: string, contextData: any): Promise<string> {
-  const model = "gemini-3.1-pro-preview";
-  
   const systemInstruction = `
 Você é o motor analítico principal de uma plataforma de investimentos com IA.
 
@@ -223,63 +266,7 @@ NÃO responda em JSON.
 NÃO entregue tabela crua.
 NÃO escreva de forma excessivamente acadêmica.
 Responda em português claro, premium, direto e pronto para ser exibido em uma interface elegante de investimentos usando Markdown.
-
-ESTRUTURA OBRIGATÓRIA (Use Markdown para formatar):
-
-# [Nome do ativo] - [Leitura resumida]
-
-**Radar**
-[Até 3 frases resumindo a oportunidade]
-
-**Sinal:** [Compra | Compra com cautela | Observação | Evitar | Dados insuficientes]
-**Sentimento:** [Muito otimista | Otimista | Neutro | Cauteloso | Pessimista]
-**Força da tese:** [Fraca | Moderada | Forte | Muito forte]
-
-### Resumo da tese
-[Explique a lógica central em 1 ou 2 parágrafos]
-
-### Pilares da análise
-- **Fundamentos:** ...
-- **Valuation:** ...
-- **Macro e setor:** ...
-- **Governança e qualitativo:** ...
-- **Notícias recentes:** ...
-- **Técnico:** ...
-
-### O que sustenta a tese
-- [Vetor positivo 1]
-- [Vetor positivo 2]
-
-### O que enfraquece a tese
-- [Risco/Fragilidade 1]
-- [Risco/Fragilidade 2]
-
-### Faixa provável
-- **Faixa conservadora:** ...
-- **Faixa base:** ...
-- **Faixa otimista:** ...
-
-### Cenários
-- **Cenário otimista:** [Explique o que teria que acontecer]
-- **Cenário base:** [Explique o cenário mais provável]
-- **Cenário pessimista:** [Explique o principal risco de decepção]
-
-**Confiança da análise:** [Baixa | Moderada | Alta]
-[Explique em poucas linhas por que a confiança ficou nesse nível]
-
-### Conclusão final
-[Feche com uma frase objetiva, elegante e prudente]
-
-CRITÉRIO FINAL DE DECISÃO
-“Compra” só quando houver fundamentos aceitáveis, valuation defensável, risco entendido e assimetria positiva plausível.
-“Compra com cautela” quando houver upside, mas com riscos relevantes.
-“Observação” quando a tese existir, mas depender de confirmação.
-“Evitar” quando a relação risco-retorno estiver ruim.
-“Dados insuficientes” quando faltarem insumos essenciais.
-
-ESTILO
-Soe como um analista híbrido: fundamentalista, probabilístico, atento a macro e notícias, disciplinado, cético e orientado a risco-retorno. Nunca soe como alguém tentando vender call de compra.
-  `;
+`;
 
   const prompt = `
 Analise o ativo ${symbol} com base nos dados fornecidos abaixo.
@@ -294,16 +281,15 @@ NEWS_CONTEXT:
 ${JSON.stringify(contextData.news || [], null, 2)}
 
 Se algum bloco estiver vazio ou incompleto, indique isso na sua análise e ajuste a confiança adequadamente.
-  `;
+`;
 
-  const response = await genAI.models.generateContent({
-    model,
-    contents: [{ parts: [{ text: prompt }] }],
-    config: {
-      systemInstruction,
-      temperature: 0.2,
-    }
-  });
+  const content = await callOpenAI(
+    [
+      { role: "system", content: systemInstruction },
+      { role: "user", content: prompt }
+    ],
+    { temperature: 0.2 }
+  );
 
-  return response.text || "Não foi possível gerar a análise.";
+  return content || "Não foi possível gerar a análise.";
 }
