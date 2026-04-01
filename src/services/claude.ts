@@ -8,6 +8,11 @@ type ClaudeMessage = {
   content: string;
 };
 
+type ClaudeContentBlock = {
+  type: "text" | "tool_use";
+  text?: string;
+};
+
 async function callClaude(messages: ClaudeMessage[], options?: { temperature?: number; systemPrompt?: string }): Promise<string> {
   if (!apiKey) {
     throw new Error("ANTHROPIC_API_KEY não configurada.");
@@ -40,7 +45,7 @@ async function callClaude(messages: ClaudeMessage[], options?: { temperature?: n
   }
 
   const data = await response.json();
-  const textBlock = data?.content?.find((block: any) => block.type === "text");
+  const textBlock = (data?.content as ClaudeContentBlock[] | undefined)?.find((block) => block.type === "text");
   return textBlock?.text || "";
 }
 
