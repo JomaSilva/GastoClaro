@@ -8,7 +8,7 @@ interface InsightCardsProps {
 
 export function InsightCards({ insights, recommendations }: InsightCardsProps) {
   return (
-    <div className="grid gap-6 md:grid-cols-2">
+    <div className="grid gap-6">
       <div className="rounded-[2rem] bg-white/50 p-8 border border-white/20 dark:bg-zinc-900/50 dark:border-zinc-800/50 shadow-xl backdrop-blur-xl">
         <div className="mb-6 flex items-center gap-3 text-brand-600 dark:text-brand-400">
           <Lightbulb size={24} strokeWidth={1.5} />
@@ -16,9 +16,9 @@ export function InsightCards({ insights, recommendations }: InsightCardsProps) {
         </div>
         <ul className="space-y-4">
           {insights.map((insight, index) => (
-            <li key={index} className="flex gap-4 text-sm text-zinc-700 leading-relaxed dark:text-zinc-300 font-light">
+            <li key={index} className="flex min-w-0 gap-4 text-sm text-zinc-700 leading-relaxed dark:text-zinc-300 font-light">
               <TrendingDown size={18} className="shrink-0 mt-0.5 opacity-50 text-brand-500" strokeWidth={1.5} />
-              {insight}
+              <span className="min-w-0 break-words">{insight}</span>
             </li>
           ))}
         </ul>
@@ -31,9 +31,9 @@ export function InsightCards({ insights, recommendations }: InsightCardsProps) {
         </div>
         <ul className="space-y-4">
           {recommendations.map((rec, index) => (
-            <li key={index} className="flex gap-4 text-sm text-zinc-700 leading-relaxed dark:text-zinc-300 font-light">
+            <li key={index} className="flex min-w-0 gap-4 text-sm text-zinc-700 leading-relaxed dark:text-zinc-300 font-light">
               <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400 mt-2 dark:bg-emerald-500 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-              {rec}
+              <span className="min-w-0 break-words">{rec}</span>
             </li>
           ))}
         </ul>
