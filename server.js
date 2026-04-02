@@ -2,4 +2,7 @@ import { register } from 'tsx/esm/api';
 
 register();
 
-await import('./server.ts');
+import('./server.ts').catch((error) => {
+	console.error(error);
+	process.exit(1);
+});
