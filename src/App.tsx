@@ -11,6 +11,9 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import History from './pages/History';
 import Investments from './pages/Investments';
+import Plans from './pages/Plans';
+import Payment from './pages/Payment';
+import { AuthProvider } from './context/AuthContext';
 
 function AppContent() {
   const { theme } = useTheme();
@@ -27,6 +30,8 @@ function AppContent() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/history" element={<History />} />
         <Route path="/investments" element={<Investments />} />
+        <Route path="/plans" element={<Plans />} />
+        <Route path="/payment" element={<Payment />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
       </Routes>
@@ -53,9 +58,11 @@ function AppContent() {
 export default function App() {
   return (
     <ThemeProvider>
-      <Router>
-        <AppContent />
-      </Router>
+      <AuthProvider>
+        <Router>
+          <AppContent />
+        </Router>
+      </AuthProvider>
     </ThemeProvider>
   );
 }

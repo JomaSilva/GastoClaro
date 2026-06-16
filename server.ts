@@ -6,6 +6,7 @@ import { createServer as createViteServer } from "vite";
 import YahooFinance from "yahoo-finance2";
 import { analyzeAsset, generateBatchSignals, processExpenses } from "./server/anthropic";
 import { fetchAssetNews, summarizeNewsCoverage } from "./server/news";
+import { createAuthRouter, createCheckoutRouter } from "./server/auth";
 
 const yahooFinance = new YahooFinance();
 
@@ -27,6 +28,10 @@ async function startServer() {
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
+
+  // Autenticação local (SQLite) e checkout de planos
+  app.use("/api/auth", createAuthRouter());
+  app.use("/api/checkout", createCheckoutRouter());
 
   app.post("/api/ai/process-expenses", async (req, res) => {
     try {

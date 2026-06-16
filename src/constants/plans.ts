@@ -1,0 +1,88 @@
+export type PlanId = "standard" | "pro" | "invest";
+
+export interface PlanDef {
+  id: PlanId;
+  name: string;
+  price: number; // R$ / mês
+  tagline: string;
+  highlight?: boolean;
+  limits: {
+    reportsPerMonth: number | "ilimitado";
+    aiAnalysesPerMonth: number | "ilimitado";
+    historyMonths: number | "ilimitado";
+  };
+  features: string[];
+}
+
+export const PLANS: PlanDef[] = [
+  {
+    id: "standard",
+    name: "Standard",
+    price: 60,
+    tagline: "O essencial para organizar suas finanças pessoais.",
+    limits: {
+      reportsPerMonth: 30,
+      aiAnalysesPerMonth: 50,
+      historyMonths: 3,
+    },
+    features: [
+      "Até 30 relatórios de gastos por mês",
+      "50 análises com IA por mês",
+      "Dashboard financeiro completo",
+      "Categorização automática de gastos",
+      "Histórico de 3 meses",
+      "Exportação em CSV",
+      "Suporte por e-mail",
+    ],
+  },
+  {
+    id: "pro",
+    name: "Pro",
+    price: 100,
+    tagline: "Mais limites e ferramentas para quem leva a sério.",
+    highlight: true,
+    limits: {
+      reportsPerMonth: 100,
+      aiAnalysesPerMonth: 200,
+      historyMonths: 12,
+    },
+    features: [
+      "Tudo do Standard, e mais:",
+      "Até 100 relatórios de gastos por mês",
+      "200 análises com IA por mês",
+      "Histórico de 12 meses",
+      "Cotações de mercado em tempo real",
+      "Exportação em CSV, PDF e Excel",
+      "Insights e recomendações avançadas",
+      "Suporte prioritário",
+    ],
+  },
+  {
+    id: "invest",
+    name: "Invest",
+    price: 150,
+    tagline: "A experiência completa, sem limites, com foco em investimentos.",
+    limits: {
+      reportsPerMonth: "ilimitado",
+      aiAnalysesPerMonth: "ilimitado",
+      historyMonths: "ilimitado",
+    },
+    features: [
+      "Tudo do Pro, e mais:",
+      "Relatórios e análises com IA ilimitados",
+      "Sinais de investimento gerados por IA",
+      "Análise profunda de ativos (ações, FIIs, cripto)",
+      "Alertas personalizados de mercado",
+      "Histórico ilimitado",
+      "Suporte 24/7 dedicado",
+    ],
+  },
+];
+
+export function getPlan(id: string | null | undefined): PlanDef | undefined {
+  return PLANS.find((p) => p.id === id);
+}
+
+export function formatBRL(value: number): string {
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
