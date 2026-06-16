@@ -117,6 +117,47 @@ const STATIC_ASSET_PROFILES: Record<string, AssetNewsProfile> = {
     searchQuery: "Raia Drogasil",
     aliases: ["RADL3", "Raia Drogasil", "RD Saude"],
   },
+  // ---- Mercado americano ----
+  "^GSPC": {
+    searchQuery: "S&P 500",
+    aliases: ["S&P 500", "SP500", "Wall Street", "bolsa americana"],
+  },
+  "^IXIC": {
+    searchQuery: "Nasdaq",
+    aliases: ["Nasdaq", "Nasdaq Composite", "bolsa de tecnologia"],
+  },
+  "^DJI": {
+    searchQuery: "Dow Jones",
+    aliases: ["Dow Jones", "Dow Jones Industrial", "Wall Street"],
+  },
+  "AAPL": {
+    searchQuery: "Apple",
+    aliases: ["Apple", "AAPL", "iPhone"],
+  },
+  "MSFT": {
+    searchQuery: "Microsoft",
+    aliases: ["Microsoft", "MSFT", "Azure"],
+  },
+  "NVDA": {
+    searchQuery: "Nvidia",
+    aliases: ["Nvidia", "NVDA", "chips de IA"],
+  },
+  "GOOGL": {
+    searchQuery: "Alphabet Google",
+    aliases: ["Alphabet", "Google", "GOOGL", "GOOG"],
+  },
+  "AMZN": {
+    searchQuery: "Amazon",
+    aliases: ["Amazon", "AMZN", "AWS"],
+  },
+  "TSLA": {
+    searchQuery: "Tesla",
+    aliases: ["Tesla", "TSLA", "Elon Musk"],
+  },
+  "META": {
+    searchQuery: "Meta Platforms",
+    aliases: ["Meta", "Facebook", "META", "Instagram"],
+  },
 };
 
 const xmlParser = new XMLParser({

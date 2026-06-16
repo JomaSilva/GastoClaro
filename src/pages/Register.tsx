@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Mail, Lock, User, ArrowRight, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { GoogleSignInButton } from '../components/GoogleSignInButton';
 import { cn } from '../lib/utils';
 
 export default function Register() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { register } = useAuth();
+  const { register, config } = useAuth();
 
   const redirectTo = (location.state as { redirectTo?: string } | null)?.redirectTo || '/dashboard';
 
@@ -83,6 +84,22 @@ export default function Register() {
             {submitting ? <Loader2 size={18} className="animate-spin" /> : <>Criar conta <ArrowRight size={18} /></>}
           </button>
         </form>
+
+        {config.googleClientId && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
+              <span className="text-[11px] font-semibold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+                ou
+              </span>
+              <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
+            </div>
+            <GoogleSignInButton
+              onSuccess={() => navigate(redirectTo, { replace: true })}
+              onError={setError}
+            />
+          </div>
+        )}
 
         <p className="text-center text-sm text-zinc-600 dark:text-zinc-400">
           Já tem uma conta?{' '}

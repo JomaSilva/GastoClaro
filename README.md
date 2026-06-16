@@ -40,7 +40,25 @@ Notes:
 
 ## Autenticação local + Planos
 
-- **Banco de dados local (SQLite)**: usa o `node:sqlite` nativo do Node 22 — sem dependências externas. O arquivo fica em `data/gastoclaro.db` (criado automaticamente no primeiro `npm run dev`).
+- **Banco de dados local (SQLite)**: usa o `node:sqlite` nativo do Node 22+ — sem dependências externas. O arquivo fica em `data/gastoclaro.db` (criado automaticamente no primeiro `npm run dev`). As migrações de colunas novas rodam sozinhas na inicialização.
 - **Login/Cadastro funcionais**: senhas com hash scrypt + salt, sessões por token (30 dias) salvas no banco. Endpoints: `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/logout`.
+- **Login com Google (opcional)**: defina `GOOGLE_CLIENT_ID` para habilitar o botão "Entrar com Google" no login e no cadastro. O servidor valida o ID token do Google (`POST /api/auth/google`) e cria/vincula a conta.
 - **Tela de vendas** em `/plans` com 3 planos: **Standard (R$60)**, **Pro (R$100)** e **Invest (R$150)** — cada um com mais limites e funcionalidades que o anterior.
-- **Fluxo de compra**: ao clicar em um plano, se não estiver logado o usuário vai para `/login` (e volta automaticamente para o pagamento depois). Se já estiver logado, vai direto para `/payment`. O checkout (`POST /api/checkout`) é simulado, registra o pagamento na tabela `payments` e ativa o plano no perfil do usuário.
+
+## Pagamento (Stripe + Google Pay)
+
+- Com `STRIPE_SECRET_KEY` configurado, o checkout usa o **Stripe Checkout** real (`POST /api/checkout/session`), que aceita **cartão** e exibe o **Google Pay** automaticamente quando disponível. Após o pagamento o usuário volta para `/payment/success`, que confirma a sessão (`POST /api/checkout/confirm`, idempotente) e ativa o plano.
+- **Webhook (fonte de verdade)**: configure `STRIPE_WEBHOOK_SECRET` e aponte um webhook para `POST /api/checkout/webhook` (evento `checkout.session.completed`). Assim o plano é ativado mesmo que o cliente pague e não retorne ao site. A assinatura é validada com HMAC-SHA256 (sem SDK) e a ativação é idempotente.
+- **Sem a chave**, o app cai automaticamente no **checkout simulado** (`POST /api/checkout`) — útil para demonstração. Nenhum valor real é cobrado, e um aviso de "modo simulado" aparece na tela de pagamento.
+- O checkout usa cobrança única (`mode: payment`) que ativa o plano. Para assinatura recorrente de verdade, troque para `mode: subscription` em `server/payments.ts` e dirija renovações pelo webhook.
+
+## Painel administrativo (oculto)
+
+- Uma conta de administrador é criada automaticamente: **e-mail `adm` / senha `adm2070`** (sobrescreva com `ADMIN_EMAIL` / `ADMIN_PASSWORD`). ⚠️ **Em produção, troque essas credenciais** — são públicas e fáceis de adivinhar. O seed garante o papel `admin`, mas respeita um banimento manual feito pelo operador.
+- O link **Admin** aparece na navbar apenas para contas com papel `admin` — usuários comuns nem o veem, e a rota `/admin` é protegida no front e no back (`requireAdmin`).
+- Em `/admin` o administrador lista todos os usuários e edita **nome, e-mail, plano, papel (user/admin)**, além de **banir/desbanir** e **excluir** contas (inclusive a própria, com travas de segurança contra autolockout). Endpoints: `GET/PATCH/DELETE /api/admin/users`.
+
+## Mercado BR + EUA
+
+- O endpoint `/api/market-data` agora traz o mercado **brasileiro** e o **americano** (S&P 500, Nasdaq, Dow e ações como AAPL, MSFT, NVDA, GOOGL, AMZN, TSLA, META), com a moeda correta e a `region` (BR/US).
+- A tela de Investimentos tem um seletor **🇧🇷 Brasil / 🇺🇸 EUA / 🌎 Todos** e formata os preços conforme a moeda do ativo.

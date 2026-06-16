@@ -5,14 +5,24 @@ export interface AuthUser {
   name: string;
   email: string;
   plan: string;
+  role: string;
+  banned?: boolean;
+  authProvider?: string;
   createdAt: string;
+}
+
+export interface AppConfig {
+  googleClientId: string | null;
+  stripeEnabled: boolean;
 }
 
 interface AuthContextValue {
   user: AuthUser | null;
   token: string | null;
   loading: boolean;
+  config: AppConfig;
   login: (email: string, password: string) => Promise<AuthUser>;
+  loginWithGoogle: (credential: string) => Promise<AuthUser>;
   register: (name: string, email: string, password: string) => Promise<AuthUser>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -41,6 +51,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
   const [loading, setLoading] = useState(true);
+  const [config, setConfig] = useState<AppConfig>({ googleClientId: null, stripeEnabled: false });
+
+  useEffect(() => {
+    api<AppConfig>('/api/auth/config')
+      .then(setConfig)
+      .catch(() => setConfig({ googleClientId: null, stripeEnabled: false }));
+  }, []);
 
   const refreshUser = useCallback(async () => {
     const stored = localStorage.getItem(TOKEN_KEY);
@@ -83,6 +100,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return handleAuth(data);
   };
 
+  const loginWithGoogle = async (credential: string) => {
+    const data = await api<{ token: string; user: AuthUser }>('/api/auth/google', {
+      method: 'POST',
+      body: JSON.stringify({ credential }),
+    });
+    return handleAuth(data);
+  };
+
   const register = async (name: string, email: string, password: string) => {
     const data = await api<{ token: string; user: AuthUser }>('/api/auth/register', {
       method: 'POST',
@@ -105,7 +130,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, refreshUser }}>
+    <AuthContext.Provider
+      value={{ user, token, loading, config, login, loginWithGoogle, register, logout, refreshUser }}
+    >
       {children}
     </AuthContext.Provider>
   );

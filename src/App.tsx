@@ -13,6 +13,8 @@ import History from './pages/History';
 import Investments from './pages/Investments';
 import Plans from './pages/Plans';
 import Payment from './pages/Payment';
+import PaymentSuccess from './pages/PaymentSuccess';
+import Admin from './pages/Admin';
 import { AuthProvider } from './context/AuthContext';
 
 function AppContent() {
@@ -32,6 +34,8 @@ function AppContent() {
         <Route path="/investments" element={<Investments />} />
         <Route path="/plans" element={<Plans />} />
         <Route path="/payment" element={<Payment />} />
+        <Route path="/payment/success" element={<PaymentSuccess />} />
+        <Route path="/admin" element={<Admin />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
       </Routes>

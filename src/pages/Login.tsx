@@ -2,12 +2,13 @@ import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Mail, Lock, ArrowRight, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { GoogleSignInButton } from '../components/GoogleSignInButton';
 import { cn } from '../lib/utils';
 
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login } = useAuth();
+  const { login, config } = useAuth();
 
   // Se o usuário veio da tela de planos, voltamos para o pagamento depois do login
   const redirectTo = (location.state as { redirectTo?: string } | null)?.redirectTo || '/dashboard';
@@ -55,9 +56,10 @@ export default function Login() {
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" size={18} />
               <input
-                type="email"
+                type="text"
+                inputMode="email"
                 required
-                autoComplete="email"
+                autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-xl border-white/20 bg-white/80 pl-10 py-3 text-sm focus:ring-brand-500/50 dark:border-zinc-800/50 dark:bg-zinc-950/80 dark:text-zinc-200 dark:placeholder:text-zinc-600"
@@ -91,6 +93,22 @@ export default function Login() {
             {submitting ? <Loader2 size={18} className="animate-spin" /> : <>Entrar <ArrowRight size={18} /></>}
           </button>
         </form>
+
+        {config.googleClientId && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
+              <span className="text-[11px] font-semibold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+                ou
+              </span>
+              <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
+            </div>
+            <GoogleSignInButton
+              onSuccess={() => navigate(redirectTo, { replace: true })}
+              onError={setError}
+            />
+          </div>
+        )}
 
         <p className="text-center text-sm text-zinc-600 dark:text-zinc-400">
           Não tem uma conta?{' '}

@@ -7,6 +7,12 @@ interface MarketItem {
   name: string;
   value: string | number;
   change: number;
+  currency?: string;
+}
+
+function formatTickerValue(price: number, currency?: string): string {
+  const locale = currency === 'USD' ? 'en-US' : 'pt-BR';
+  return price.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 export function MarketTicker() {
@@ -21,9 +27,10 @@ export function MarketTicker() {
           throw new Error('Invalid data format received from server');
         }
         const formattedData = response.data.map((item: any) => ({
-          name: (item.name || item.symbol || '').replace('^BVSP', 'IBOVESPA').replace('USDBRL=X', 'USD/BRL').replace('BTC-USD', 'BTC/USD').replace('.SA', ''),
-          value: (typeof item.price === 'number' ? item.price : 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 }),
-          change: typeof item.change === 'number' ? item.change : 0
+          name: (item.name || item.symbol || '').replace('^BVSP', 'IBOVESPA').replace('USDBRL=X', 'USD/BRL').replace('BTC-USD', 'BTC/USD').replace('^GSPC', 'S&P 500').replace('^IXIC', 'NASDAQ').replace('^DJI', 'DOW JONES').replace('.SA', ''),
+          value: formatTickerValue(typeof item.price === 'number' ? item.price : 0, item.currency),
+          change: typeof item.change === 'number' ? item.change : 0,
+          currency: item.currency,
         }));
         if (formattedData.length > 0) {
           setMarketData(formattedData);

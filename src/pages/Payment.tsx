@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { CreditCard, Lock, CheckCircle2, ShieldCheck, ArrowRight, Loader2 } from 'lucide-react';
+import { CreditCard, Lock, CheckCircle2, ShieldCheck, ArrowRight, Loader2, Wallet } from 'lucide-react';
 import { motion } from 'motion/react';
 import { getPlan, formatBRL } from '../constants/plans';
 import { useAuth } from '../context/AuthContext';
@@ -20,9 +20,10 @@ export default function Payment() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, token, loading, refreshUser } = useAuth();
+  const { user, token, loading, refreshUser, config } = useAuth();
 
   const plan = getPlan(searchParams.get('plan'));
+  const canceled = searchParams.get('canceled') === '1';
 
   const [cardNumber, setCardNumber] = useState('');
   const [cardName, setCardName] = useState('');
@@ -31,6 +32,35 @@ export default function Payment() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
+  // Quando a Stripe está ativa, mostramos o checkout real por padrão.
+  // O usuário pode optar pelo modo simulado (teste) manualmente.
+  const [useSimulated, setUseSimulated] = useState(false);
+
+  const handleStripeCheckout = async () => {
+    if (!plan) return;
+    setError(null);
+    setRedirecting(true);
+    try {
+      const res = await fetch('/api/checkout/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ plan: plan.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Falha ao iniciar o checkout.');
+      if (data.enabled && data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      // Stripe indisponível no servidor → cai no modo simulado.
+      setUseSimulated(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao iniciar o checkout.');
+    } finally {
+      setRedirecting(false);
+    }
+  };
 
   // Proteção da rota: se não estiver logado, manda para o login e volta depois
   useEffect(() => {
@@ -137,6 +167,19 @@ export default function Payment() {
           Você está assinando como <span className="font-semibold">{user.email}</span>
         </p>
 
+        {canceled && (
+          <div className="mx-auto mt-6 max-w-md rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-400">
+            Pagamento cancelado. Você pode tentar novamente quando quiser.
+          </div>
+        )}
+
+        {!config.stripeEnabled && (
+          <div className="mx-auto mt-6 max-w-md rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-center text-xs text-blue-700 dark:border-blue-900/50 dark:bg-blue-950/40 dark:text-blue-400">
+            Modo simulado ativo. Configure <span className="font-mono font-semibold">STRIPE_SECRET_KEY</span>{' '}
+            no servidor para habilitar o pagamento real (cartão + Google Pay).
+          </div>
+        )}
+
         <div className="mt-14 grid gap-8 lg:grid-cols-5">
           {/* Resumo do pedido */}
           <div className="lg:col-span-2">
@@ -189,23 +232,102 @@ export default function Payment() {
 
             <div className="mt-6 flex items-center justify-center gap-2 text-xs text-zinc-400 dark:text-zinc-500">
               <ShieldCheck size={14} />
-              Ambiente de pagamento simulado para demonstração
+              {config.stripeEnabled && !useSimulated
+                ? 'Pagamento processado com segurança pela Stripe'
+                : 'Ambiente de pagamento simulado para demonstração'}
             </div>
           </div>
 
-          {/* Formulário de pagamento */}
+          {/* Pagamento */}
           <div className="lg:col-span-3">
+            {config.stripeEnabled && !useSimulated ? (
+              <div className="rounded-[2rem] border border-zinc-200/60 bg-white/50 p-8 shadow-xl backdrop-blur-xl dark:border-zinc-800/50 dark:bg-zinc-900/40">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl gold-gradient-bg shadow-lg shadow-brand-500/20">
+                    <Wallet size={18} />
+                  </div>
+                  <h3 className="text-lg font-bold text-zinc-900 dark:text-white font-heading">
+                    Pagamento seguro
+                  </h3>
+                </div>
+
+                {error && (
+                  <div className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-400">
+                    {error}
+                  </div>
+                )}
+
+                <p className="mt-6 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+                  Você será levado ao checkout seguro da <span className="font-semibold">Stripe</span>{' '}
+                  para concluir o pagamento com <span className="font-semibold">cartão</span> ou{' '}
+                  <span className="font-semibold gold-gradient">Google Pay</span> — que aparece
+                  automaticamente quando disponível no seu dispositivo.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={handleStripeCheckout}
+                  disabled={redirecting}
+                  className={cn(
+                    'mt-8 flex w-full items-center justify-center gap-2 rounded-full gold-gradient-bg py-4 text-sm font-semibold uppercase tracking-widest shadow-xl shadow-brand-500/25 transition-all hover:opacity-90 active:scale-95',
+                    redirecting && 'opacity-60'
+                  )}
+                >
+                  {redirecting ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Redirecionando...
+                    </>
+                  ) : (
+                    <>
+                      <Lock size={16} />
+                      Pagar {formatBRL(plan.price)}
+                    </>
+                  )}
+                </button>
+
+                <div className="mt-4 flex items-center justify-center gap-2 text-xs text-zinc-400 dark:text-zinc-500">
+                  <ShieldCheck size={14} />
+                  Cartão e Google Pay processados com segurança pela Stripe
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError(null);
+                    setUseSimulated(true);
+                  }}
+                  className="mt-6 block w-full text-center text-xs font-semibold text-zinc-400 transition-colors hover:text-brand-500 dark:text-zinc-500"
+                >
+                  Prefiro usar o pagamento simulado (teste)
+                </button>
+              </div>
+            ) : (
             <form
               onSubmit={handleSubmit}
               className="rounded-[2rem] border border-zinc-200/60 bg-white/50 p-8 shadow-xl backdrop-blur-xl dark:border-zinc-800/50 dark:bg-zinc-900/40"
             >
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl gold-gradient-bg shadow-lg shadow-brand-500/20">
-                  <CreditCard size={18} />
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl gold-gradient-bg shadow-lg shadow-brand-500/20">
+                    <CreditCard size={18} />
+                  </div>
+                  <h3 className="text-lg font-bold text-zinc-900 dark:text-white font-heading">
+                    Dados do cartão
+                  </h3>
                 </div>
-                <h3 className="text-lg font-bold text-zinc-900 dark:text-white font-heading">
-                  Dados do cartão
-                </h3>
+                {config.stripeEnabled && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError(null);
+                      setUseSimulated(false);
+                    }}
+                    className="text-xs font-semibold text-brand-600 hover:text-brand-500 dark:text-brand-400"
+                  >
+                    ← Checkout Stripe
+                  </button>
+                )}
               </div>
 
               {error && (
@@ -305,6 +427,7 @@ export default function Payment() {
                 Pagamento simulado — nenhum valor real será cobrado.
               </p>
             </form>
+            )}
           </div>
         </div>
       </motion.div>

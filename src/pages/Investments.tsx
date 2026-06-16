@@ -28,6 +28,32 @@ import { analyzeAsset, generateBatchSignals } from '../services/claude';
 
 import { SIGNALS as INITIAL_SIGNALS, SENTIMENT_NEWS } from '../constants/investments';
 
+// Nomes amigáveis para símbolos especiais (índices/câmbio/cripto BR e EUA).
+const TICKER_LABELS: Record<string, string> = {
+  '^BVSP': 'IBOVESPA',
+  'USDBRL=X': 'USD/BRL',
+  'BTC-USD': 'BTC/USD',
+  '^GSPC': 'S&P 500',
+  '^IXIC': 'NASDAQ',
+  '^DJI': 'DOW JONES',
+};
+
+function tickerLabel(symbol: string): string {
+  return TICKER_LABELS[symbol] || symbol.replace('.SA', '');
+}
+
+function formatAssetPrice(price: number, currency?: string, region?: 'BR' | 'US'): string {
+  const safeCurrency =
+    currency === 'USD' || currency === 'BRL' ? currency : region === 'US' ? 'USD' : 'BRL';
+  const locale = safeCurrency === 'USD' ? 'en-US' : 'pt-BR';
+  return price.toLocaleString(locale, { style: 'currency', currency: safeCurrency });
+}
+
+function regionOf(symbol: string, region?: string): 'BR' | 'US' {
+  if (region === 'US' || region === 'BR') return region;
+  return /^(AAPL|MSFT|NVDA|GOOGL|AMZN|TSLA|META)$|^\^(GSPC|IXIC|DJI)$/.test(symbol) ? 'US' : 'BR';
+}
+
 function SignalBadge({ signal }: { signal: string }) {
   const cfg: Record<string, { bg: string, text: string, label: string }> = {
     COMPRA: { bg: "bg-emerald-100 dark:bg-emerald-900/30", text: "text-emerald-700 dark:text-emerald-400", label: "COMPRA" },
@@ -83,6 +109,10 @@ function AssetDetailsModal({ asset, onClose }: { asset: any, onClose: () => void
   const [activeTab, setActiveTab] = useState<'chart' | 'ai'>('chart');
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  // Símbolo de moeda do ativo (US$ para ativos americanos, R$ caso contrário).
+  const curSymbol =
+    asset.currency === 'USD' || regionOf(asset.symbol, asset.region) === 'US' ? 'US$' : 'R$';
 
   useEffect(() => {
     const fetchHistory = async () => {
@@ -200,11 +230,11 @@ function AssetDetailsModal({ asset, onClose }: { asset: any, onClose: () => void
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={chartData}>
                   <XAxis dataKey="date" fontSize={10} tickMargin={10} stroke="#888888" minTickGap={30} />
-                  <YAxis domain={['auto', 'auto']} fontSize={10} tickFormatter={(val) => `R$${val.toFixed(2)}`} stroke="#888888" width={60} />
-                  <Tooltip 
+                  <YAxis domain={['auto', 'auto']} fontSize={10} tickFormatter={(val) => `${curSymbol}${val.toFixed(2)}`} stroke="#888888" width={60} />
+                  <Tooltip
                     contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                     itemStyle={{ color: '#10b981', fontWeight: 'bold' }}
-                    formatter={(value: number) => [`R$ ${value.toFixed(2)}`, 'Preço']}
+                    formatter={(value: number) => [`${curSymbol} ${value.toFixed(2)}`, 'Preço']}
                   />
                   <Line type="monotone" dataKey="price" stroke="#10b981" strokeWidth={3} dot={false} activeDot={{ r: 6, fill: '#10b981', stroke: '#fff', strokeWidth: 2 }} />
                 </LineChart>
@@ -770,10 +800,15 @@ function WatchlistScreen({ signals }: { signals: any[] }) {
 
 export default function Investments() {
   const [activeTab, setActiveTab] = useState("radar");
-  const [signals, setSignals] = useState(INITIAL_SIGNALS);
+  const [signals, setSignals] = useState<any[]>(INITIAL_SIGNALS);
+  const [marketRegion, setMarketRegion] = useState<'ALL' | 'BR' | 'US'>('ALL');
   const [selectedAsset, setSelectedAsset] = useState<any | null>(null);
   const [isAnalyzingSignals, setIsAnalyzingSignals] = useState(false);
   const hasRunAI = React.useRef(false);
+
+  const visibleSignals = marketRegion === 'ALL'
+    ? signals
+    : signals.filter((s: any) => regionOf(s.symbol, s.region) === marketRegion);
 
   useEffect(() => {
     const fetchMarketData = async () => {
@@ -787,11 +822,9 @@ export default function Investments() {
           .map((item: any) => {
             const existing = INITIAL_SIGNALS.find(s => s.symbol === item.symbol);
             const change = typeof item.change === 'number' ? item.change : 0;
-            
-            let ticker = item.symbol.replace('.SA', '');
-            if (item.symbol === '^BVSP') ticker = 'IBOVESPA';
-            if (item.symbol === 'USDBRL=X') ticker = 'USD/BRL';
-            if (item.symbol === 'BTC-USD') ticker = 'BTC/USD';
+            const region = regionOf(item.symbol, item.region);
+
+            const ticker = tickerLabel(item.symbol);
 
             // Generate dynamic signal if not in INITIAL_SIGNALS
             const signal = existing ? existing.signal : (change > 1 ? 'COMPRA' : change < -1 ? 'VENDA' : 'NEUTRO');
@@ -799,19 +832,21 @@ export default function Investments() {
             const rsi = existing ? existing.rsi : Math.round(Math.min(100, Math.max(0, 50 + change * 5)));
             const macd = existing ? existing.macd : (change > 0 ? "↑" : change < 0 ? "↓" : "→");
             const sentiment = existing ? existing.sentiment : Math.round(Math.min(100, Math.max(0, 50 + change * 8)));
-            
+
             return {
               ticker,
               symbol: item.symbol,
               name: item.name || item.symbol,
+              region,
+              currency: item.currency,
               signal,
               strength,
-              price: (typeof item.price === 'number' ? item.price : 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+              price: formatAssetPrice(typeof item.price === 'number' ? item.price : 0, item.currency, region),
               change,
               rsi,
               macd,
               sentiment,
-              sector: existing ? existing.sector : (item.symbol === 'BTC-USD' ? 'Cripto' : item.symbol === 'USDBRL=X' ? 'Câmbio' : item.symbol === '^BVSP' ? 'Índice' : 'Diversos'),
+              sector: existing ? existing.sector : (item.symbol === 'BTC-USD' ? 'Cripto' : item.symbol === 'USDBRL=X' ? 'Câmbio' : region === 'US' ? 'EUA' : 'Diversos'),
               rationale: "Analisando mercado..."
             };
           });
@@ -859,11 +894,17 @@ export default function Investments() {
   }, []);
 
   const tabs = [
-    { id: "radar", label: "Radar", icon: Radar, component: <RadarScreen signals={signals} onSelectAsset={setSelectedAsset} isAnalyzing={isAnalyzingSignals} /> },
-    { id: "signals", label: "Sinais", icon: Zap, component: <SignalsScreen signals={signals} onSelectAsset={setSelectedAsset} isAnalyzing={isAnalyzingSignals} /> },
+    { id: "radar", label: "Radar", icon: Radar, component: <RadarScreen signals={visibleSignals} onSelectAsset={setSelectedAsset} isAnalyzing={isAnalyzingSignals} /> },
+    { id: "signals", label: "Sinais", icon: Zap, component: <SignalsScreen signals={visibleSignals} onSelectAsset={setSelectedAsset} isAnalyzing={isAnalyzingSignals} /> },
     { id: "scanner", label: "Scanner", icon: Search, component: <ScannerScreen /> },
-    { id: "watchlist", label: "Watchlist", icon: Star, component: <WatchlistScreen signals={signals} /> },
+    { id: "watchlist", label: "Watchlist", icon: Star, component: <WatchlistScreen signals={visibleSignals} /> },
     { id: "sentiment", label: "Sentimento", icon: BarChart3, component: <SentimentScreen /> },
+  ];
+
+  const REGION_TABS: { id: 'ALL' | 'BR' | 'US'; label: string }[] = [
+    { id: 'ALL', label: '🌎 Todos' },
+    { id: 'BR', label: '🇧🇷 Brasil' },
+    { id: 'US', label: '🇺🇸 EUA' },
   ];
 
   return (
@@ -909,6 +950,28 @@ export default function Investments() {
       {/* Main Content Area */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
         <div className="max-w-3xl mx-auto">
+          {/* Seletor de mercado: Brasil / EUA */}
+          <div className="mb-6 flex items-center justify-between gap-3">
+            <div className="flex gap-1 p-1 bg-zinc-100 dark:bg-zinc-900 rounded-xl">
+              {REGION_TABS.map((r) => (
+                <button
+                  key={r.id}
+                  onClick={() => setMarketRegion(r.id)}
+                  className={cn(
+                    "px-4 py-1.5 rounded-lg text-xs font-bold transition-all",
+                    marketRegion === r.id
+                      ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm"
+                      : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+                  )}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+              {visibleSignals.length} ativos
+            </span>
+          </div>
           {tabs.find(t => t.id === activeTab)?.component}
         </div>
       </div>

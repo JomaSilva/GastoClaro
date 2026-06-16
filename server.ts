@@ -6,7 +6,8 @@ import { createServer as createViteServer } from "vite";
 import YahooFinance from "yahoo-finance2";
 import { analyzeAsset, generateBatchSignals, processExpenses } from "./server/anthropic";
 import { fetchAssetNews, summarizeNewsCoverage } from "./server/news";
-import { createAuthRouter, createCheckoutRouter } from "./server/auth";
+import { createAuthRouter, createCheckoutRouter, createAdminRouter, fulfillStripeCheckout } from "./server/auth";
+import { verifyStripeWebhook } from "./server/payments";
 
 const yahooFinance = new YahooFinance();
 
@@ -22,6 +23,31 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
+  // Atrás de um proxy (HTTPS) em produção, confia no X-Forwarded-Proto para montar URLs corretas.
+  app.set("trust proxy", process.env.NODE_ENV === "production" ? 1 : false);
+
+  // Webhook da Stripe: precisa do corpo CRU (antes do express.json) para validar a assinatura.
+  // É a fonte de verdade do pagamento — garante ativação mesmo se o cliente não voltar ao site.
+  app.post("/api/checkout/webhook", express.raw({ type: "application/json" }), (req, res) => {
+    const event = verifyStripeWebhook(req.body, req.headers["stripe-signature"] as string | undefined);
+    if (!event) {
+      res.status(400).json({ error: "Assinatura de webhook inválida." });
+      return;
+    }
+    try {
+      if (
+        event.type === "checkout.session.completed" ||
+        event.type === "checkout.session.async_payment_succeeded"
+      ) {
+        fulfillStripeCheckout(event.data?.object ?? {});
+      }
+      res.json({ received: true });
+    } catch (error) {
+      console.error("Stripe webhook handler error:", error);
+      res.status(500).json({ error: "Erro ao processar webhook." });
+    }
+  });
+
   app.use(express.json({ limit: "25mb" }));
 
   // API routes
@@ -29,8 +55,9 @@ async function startServer() {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
-  // Autenticação local (SQLite) e checkout de planos
+  // Autenticação local (SQLite), painel administrativo e checkout de planos
   app.use("/api/auth", createAuthRouter());
+  app.use("/api/admin", createAdminRouter());
   app.use("/api/checkout", createCheckoutRouter());
 
   app.post("/api/ai/process-expenses", async (req, res) => {
@@ -84,14 +111,24 @@ async function startServer() {
     }
   });
 
+  // Mercado brasileiro + câmbio/cripto
+  const BR_SYMBOLS = [
+    "^BVSP", "USDBRL=X", "BTC-USD",
+    "PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "MGLU3.SA", "WEGE3.SA",
+    "ABEV3.SA", "B3SA3.SA", "ELET3.SA", "RENT3.SA", "BBAS3.SA", "SUZB3.SA", "RADL3.SA",
+  ];
+  // Mercado americano: índices + principais ações
+  const US_SYMBOLS = [
+    "^GSPC", "^IXIC", "^DJI",
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "TSLA", "META",
+  ];
+  const US_SYMBOL_SET = new Set(US_SYMBOLS);
+  const regionForSymbol = (symbol: string): "US" | "BR" => (US_SYMBOL_SET.has(symbol) ? "US" : "BR");
+
   app.get("/api/market-data", async (req, res) => {
     console.log("Fetching market data...");
     try {
-      const symbols = [
-        "^BVSP", "USDBRL=X", "BTC-USD", 
-        "PETR4.SA", "VALE3.SA", "ITUB4.SA", "BBDC4.SA", "MGLU3.SA", "WEGE3.SA",
-        "ABEV3.SA", "B3SA3.SA", "ELET3.SA", "RENT3.SA", "BBAS3.SA", "SUZB3.SA", "RADL3.SA"
-      ];
+      const symbols = [...BR_SYMBOLS, ...US_SYMBOLS];
       const results = await Promise.all(
         symbols.map(async (symbol) => {
           try {
@@ -114,7 +151,8 @@ async function startServer() {
               name: quote.shortName || quote.longName || symbol,
               price: quote.regularMarketPrice ?? 0,
               change: quote.regularMarketChangePercent ?? 0,
-              currency: quote.currency,
+              currency: quote.currency ?? (regionForSymbol(symbol) === "US" ? "USD" : "BRL"),
+              region: regionForSymbol(symbol),
               news
             };
           } catch (e) {

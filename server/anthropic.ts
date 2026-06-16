@@ -1,6 +1,6 @@
 import type { ExpenseReport } from "../src/types";
 
-const CLAUDE_MODEL = "claude-sonnet-4-6";
+const CLAUDE_MODEL = "claude-opus-4-8";
 
 type ClaudeMessage = {
   role: "user" | "assistant";
@@ -38,9 +38,8 @@ function getAnthropicApiKey(): string {
 async function callClaude(messages: ClaudeMessage[], options?: { temperature?: number; systemPrompt?: string }): Promise<string> {
   const body: Record<string, unknown> = {
     model: CLAUDE_MODEL,
-    max_tokens: 4096,
+    max_tokens: 50000,
     messages,
-    temperature: options?.temperature ?? 0.2,
   };
 
   if (options?.systemPrompt) {

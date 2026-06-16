@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, History, Wallet, Gem, LogOut, User as UserIcon } from 'lucide-react';
+import { LayoutDashboard, History, Wallet, Gem, LogOut, User as UserIcon, ShieldCheck } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { ThemeToggle } from './ThemeToggle';
 import { useAuth } from '../context/AuthContext';
@@ -15,6 +15,10 @@ export function Navbar() {
     { path: '/history', label: 'Histórico', icon: History },
     { path: '/investments', label: 'Investimentos', icon: Wallet },
     { path: '/plans', label: 'Planos', icon: Gem },
+    // Visível apenas para administradores — usuários comuns nem veem o link.
+    ...(user?.role === 'admin'
+      ? [{ path: '/admin', label: 'Admin', icon: ShieldCheck }]
+      : []),
   ];
 
   const handleLogout = async () => {
