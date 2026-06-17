@@ -35,6 +35,12 @@ function getAnthropicApiKey(): string {
   return apiKey;
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Status transitórios da Anthropic que valem retentar (529 = Overloaded, 429 = rate limit).
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 529]);
+const MAX_RETRIES = 4;
+
 async function callClaude(messages: ClaudeMessage[], options?: { temperature?: number; systemPrompt?: string }): Promise<string> {
   const body: Record<string, unknown> = {
     model: CLAUDE_MODEL,
@@ -45,25 +51,49 @@ async function callClaude(messages: ClaudeMessage[], options?: { temperature?: n
   if (options?.systemPrompt) {
     body.system = options.systemPrompt;
   }
+  if (typeof options?.temperature === "number") {
+    body.temperature = options.temperature;
+  }
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": getAnthropicApiKey(),
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify(body),
-  });
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": getAnthropicApiKey(),
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify(body),
+    });
 
-  if (!response.ok) {
+    if (response.ok) {
+      const data = await response.json();
+      const textBlock = (data?.content as ClaudeContentBlock[] | undefined)?.find((block) => block.type === "text");
+      return textBlock?.text || "";
+    }
+
     const errorBody = await response.text();
+
+    // Sobrecarga/limite temporário → espera (backoff exponencial) e tenta de novo.
+    if (RETRYABLE_STATUS.has(response.status) && attempt < MAX_RETRIES) {
+      const delay = Math.min(1000 * 2 ** attempt, 8000) + Math.floor(Math.random() * 300);
+      console.warn(`Anthropic ${response.status} — retentando ${attempt + 1}/${MAX_RETRIES} em ${delay}ms`);
+      await sleep(delay);
+      continue;
+    }
+
+    // Esgotou as tentativas (ou erro não-retentável): mensagem amigável.
+    if ([500, 502, 503, 529].includes(response.status)) {
+      throw new Error("A IA está temporariamente sobrecarregada. Tente novamente em alguns segundos.");
+    }
+    if (response.status === 429) {
+      throw new Error("Muitas requisições à IA em pouco tempo. Aguarde um instante e tente de novo.");
+    }
     throw new Error(`Erro na API Anthropic (${response.status}): ${errorBody}`);
   }
 
-  const data = await response.json();
-  const textBlock = (data?.content as ClaudeContentBlock[] | undefined)?.find((block) => block.type === "text");
-  return textBlock?.text || "";
+  // Inalcançável (o loop sempre retorna ou lança), mas mantém o TypeScript satisfeito.
+  throw new Error("A IA está temporariamente sobrecarregada. Tente novamente em alguns segundos.");
 }
 
 function extractJson<T>(raw: string, fallback: T): T {
