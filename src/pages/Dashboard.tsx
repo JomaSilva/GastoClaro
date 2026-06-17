@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Send, Loader2, RefreshCw, TrendingUp, AlertCircle, Image as ImageIcon, X, Upload, Download, FileSpreadsheet, Check, Zap, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { processExpenses } from '../services/claude';
+import { useAuth } from '../context/AuthContext';
 import { SIGNALS } from '../constants/investments';
 import { ExpenseReport } from '../types';
 import { ExpenseTable } from '../components/ExpenseTable';
@@ -12,6 +13,7 @@ import { formatCurrency, fileToBase64 } from '../lib/utils';
 import { downloadCSV, copyToGoogleSheets } from '../lib/exportUtils';
 
 export default function Dashboard() {
+  const { token, user } = useAuth();
   const [inputText, setInputText] = useState('');
   const [selectedImages, setSelectedImages] = useState<{ id: string, file: File, preview: string }[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -20,16 +22,24 @@ export default function Dashboard() {
   const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Reage à troca de usuário (login/logout): isola o Dashboard entre contas.
+  // O cache global 'last_report' é limpo pelo AuthContext ao logar/deslogar, então
+  // ao trocar de conta isto recomeça em branco em vez de mostrar dados da conta anterior.
   useEffect(() => {
     const saved = localStorage.getItem('last_report');
     if (saved) {
       try {
         setReport(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to load saved report", e);
+        return;
+      } catch {
+        // cache corrompido → recomeça limpo
       }
     }
-  }, []);
+    setReport(null);
+    setInputText('');
+    setSelectedImages([]);
+    setError(null);
+  }, [user?.id]);
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -79,6 +89,15 @@ export default function Dashboard() {
       const result = await processExpenses(inputText, imagesData);
       setReport(result);
       localStorage.setItem('last_report', JSON.stringify(result));
+
+      // Persiste no histórico do usuário (fire-and-forget; não bloqueia a UI).
+      if (token) {
+        fetch('/api/reports', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ report: result }),
+        }).catch(() => {});
+      }
     } catch (err) {
       console.error(err);
       setError('Ocorreu um erro ao processar seus gastos. Tente novamente.');

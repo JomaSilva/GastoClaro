@@ -4,21 +4,24 @@ import { LayoutDashboard, History, Wallet, Gem, LogOut, User as UserIcon, Shield
 import { cn } from '../lib/utils';
 import { ThemeToggle } from './ThemeToggle';
 import { useAuth } from '../context/AuthContext';
+import { meetsPlan, isAdminRole } from '../constants/plans';
 
 export function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
 
+  // Dashboard e Investimentos exigem login + plano >= Standard (admins sempre passam).
+  const canUsePlatform = !!user && (isAdminRole(user.role) || meetsPlan(user.plan, 'standard'));
+
   const navItems = [
-    { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { path: '/history', label: 'Histórico', icon: History },
-    { path: '/investments', label: 'Investimentos', icon: Wallet },
+    ...(canUsePlatform ? [{ path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }] : []),
+    // Histórico fica disponível para qualquer conta logada.
+    ...(user ? [{ path: '/history', label: 'Histórico', icon: History }] : []),
+    ...(canUsePlatform ? [{ path: '/investments', label: 'Investimentos', icon: Wallet }] : []),
     { path: '/plans', label: 'Planos', icon: Gem },
     // Visível apenas para administradores — usuários comuns nem veem o link.
-    ...(user?.role === 'admin'
-      ? [{ path: '/admin', label: 'Admin', icon: ShieldCheck }]
-      : []),
+    ...(isAdminRole(user?.role) ? [{ path: '/admin', label: 'Admin', icon: ShieldCheck }] : []),
   ];
 
   const handleLogout = async () => {

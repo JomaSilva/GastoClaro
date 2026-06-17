@@ -31,6 +31,8 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 const TOKEN_KEY = 'gastoclaro_token';
+// Cache de conveniência do último relatório do Dashboard (por sessão de login).
+const DASHBOARD_CACHE_KEY = 'last_report';
 
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(path, {
@@ -86,6 +88,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refreshUser]);
 
   const handleAuth = (data: { token: string; user: AuthUser }) => {
+    // Ao entrar em qualquer conta, descarta cache de Dashboard de uma sessão anterior
+    // (evita que outra conta veja o relatório do usuário anterior neste navegador).
+    localStorage.removeItem(DASHBOARD_CACHE_KEY);
     localStorage.setItem(TOKEN_KEY, data.token);
     setToken(data.token);
     setUser(data.user);
@@ -125,6 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }).catch(() => {});
     }
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(DASHBOARD_CACHE_KEY);
     setToken(null);
     setUser(null);
   };

@@ -52,11 +52,18 @@ Notes:
 - **Sem a chave**, o app cai automaticamente no **checkout simulado** (`POST /api/checkout`) — útil para demonstração. Nenhum valor real é cobrado, e um aviso de "modo simulado" aparece na tela de pagamento.
 - O checkout usa cobrança única (`mode: payment`) que ativa o plano. Para assinatura recorrente de verdade, troque para `mode: subscription` em `server/payments.ts` e dirija renovações pelo webhook.
 
-## Painel administrativo (oculto)
+## Painel administrativo (oculto) + hierarquia
 
-- Uma conta de administrador é criada automaticamente: **e-mail `adm` / senha `adm2070`** (sobrescreva com `ADMIN_EMAIL` / `ADMIN_PASSWORD`). ⚠️ **Em produção, troque essas credenciais** — são públicas e fáceis de adivinhar. O seed garante o papel `admin`, mas respeita um banimento manual feito pelo operador.
-- O link **Admin** aparece na navbar apenas para contas com papel `admin` — usuários comuns nem o veem, e a rota `/admin` é protegida no front e no back (`requireAdmin`).
-- Em `/admin` o administrador lista todos os usuários e edita **nome, e-mail, plano, papel (user/admin)**, além de **banir/desbanir** e **excluir** contas (inclusive a própria, com travas de segurança contra autolockout). Endpoints: `GET/PATCH/DELETE /api/admin/users`.
+- A conta semeada **`adm` / `adm2070`** é o **super-admin** (nível máximo). Sobrescreva com `ADMIN_EMAIL` / `ADMIN_PASSWORD`. ⚠️ **Em produção, troque essas credenciais.** O seed garante o papel `superadmin`, mas respeita um banimento manual feito pelo operador.
+- **Hierarquia**: só o super-admin concede/remove o papel `admin` de outras contas e gerencia (banir/excluir) outros admins. A conta principal é **protegida** — admins comuns não conseguem editá-la, bani-la ou excluí-la. Admins comuns gerenciam apenas usuários comuns.
+- O link **Admin** aparece na navbar apenas para `admin`/`superadmin` — usuários comuns nem o veem, e a rota `/admin` é protegida no front e no back (`requireAdmin`).
+- Em `/admin`: lista todos os usuários e edita **nome, e-mail, plano, papel**, **banir/desbanir** e **excluir**, com travas anti-lockout e a UI desabilitando o que cada admin não pode fazer. Endpoints: `GET/PATCH/DELETE /api/admin/users`.
+
+## Controle de acesso por plano + Histórico
+
+- **Dashboard** e **Investimentos** exigem login **+ plano ≥ Standard** (admins sempre passam). A navbar esconde esses links de quem não tem acesso, e a rota é barrada no cliente (inclusive digitando `/dashboard` manualmente) via `ProtectedRoute`, **e** no servidor: os endpoints de IA (`/api/ai/*`) usam `requirePlan("standard")`. `/api/market-data` segue público (ticker da home).
+- **Histórico** (`/history`) exige login (qualquer plano) e mostra os relatórios **reais** do usuário. Cada análise do Dashboard é persistida na tabela `reports` (por usuário) e listada no histórico, com detalhe e exclusão. Endpoints: `GET/POST/DELETE /api/reports`.
+- **Login com Google** aparece sempre no login/cadastro; sem `GOOGLE_CLIENT_ID` o botão explica como ativar em vez de sumir.
 
 ## Mercado BR + EUA
 

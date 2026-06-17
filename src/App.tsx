@@ -16,6 +16,7 @@ import Payment from './pages/Payment';
 import PaymentSuccess from './pages/PaymentSuccess';
 import Admin from './pages/Admin';
 import { AuthProvider } from './context/AuthContext';
+import { ProtectedRoute } from './components/ProtectedRoute';
 
 function AppContent() {
   const { theme } = useTheme();
@@ -29,9 +30,30 @@ function AppContent() {
       <MarketTicker />
       <Routes>
         <Route path="/" element={<Home />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/history" element={<History />} />
-        <Route path="/investments" element={<Investments />} />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute minPlan="standard">
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/history"
+          element={
+            <ProtectedRoute>
+              <History />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/investments"
+          element={
+            <ProtectedRoute minPlan="standard">
+              <Investments />
+            </ProtectedRoute>
+          }
+        />
         <Route path="/plans" element={<Plans />} />
         <Route path="/payment" element={<Payment />} />
         <Route path="/payment/success" element={<PaymentSuccess />} />

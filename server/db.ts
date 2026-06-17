@@ -44,6 +44,17 @@ db.exec(`
     status      TEXT NOT NULL DEFAULT 'paid',
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS reports (
+    id               TEXT PRIMARY KEY,
+    user_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    total_amount     REAL NOT NULL DEFAULT 0,
+    highest_category TEXT,
+    item_count       INTEGER NOT NULL DEFAULT 0,
+    month_reference  TEXT,
+    payload          TEXT NOT NULL,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
 // ---------- Migrações para bancos já existentes ----------
@@ -172,11 +183,58 @@ export function deleteUser(id: string): void {
 }
 
 // Quantos administradores ativos (não banidos) existem, opcionalmente excluindo um id.
+// Considera tanto 'admin' quanto 'superadmin'.
 export function countActiveAdmins(excludeId?: string): number {
   const rows = db
-    .prepare("SELECT id FROM users WHERE role = 'admin' AND banned = 0")
+    .prepare("SELECT id FROM users WHERE role IN ('admin', 'superadmin') AND banned = 0")
     .all() as Array<{ id: string }>;
   return rows.filter((r) => r.id !== excludeId).length;
+}
+
+// ---------- Relatórios de gastos (histórico do Dashboard, por usuário) ----------
+
+export interface ReportRow {
+  id: string;
+  user_id: string;
+  total_amount: number;
+  highest_category: string | null;
+  item_count: number;
+  month_reference: string | null;
+  payload: string;
+  created_at: string;
+}
+
+export function createReport(userId: string, report: any): ReportRow {
+  const id = crypto.randomUUID();
+  db.prepare(
+    `INSERT INTO reports (id, user_id, total_amount, highest_category, item_count, month_reference, payload)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    id,
+    userId,
+    Number(report?.total_amount) || 0,
+    typeof report?.highest_category === "string" ? report.highest_category : null,
+    Array.isArray(report?.categorized_items) ? report.categorized_items.length : 0,
+    typeof report?.monthReference === "string" ? report.monthReference : null,
+    JSON.stringify(report ?? {})
+  );
+  return db.prepare("SELECT * FROM reports WHERE id = ?").get(id) as unknown as ReportRow;
+}
+
+export function listReportsByUser(userId: string): ReportRow[] {
+  return db
+    .prepare("SELECT * FROM reports WHERE user_id = ? ORDER BY created_at DESC")
+    .all(userId) as unknown as ReportRow[];
+}
+
+export function getReportById(id: string, userId: string): ReportRow | undefined {
+  return db
+    .prepare("SELECT * FROM reports WHERE id = ? AND user_id = ?")
+    .get(id, userId) as unknown as ReportRow | undefined;
+}
+
+export function deleteReport(id: string, userId: string): void {
+  db.prepare("DELETE FROM reports WHERE id = ? AND user_id = ?").run(id, userId);
 }
 
 // ---------- Sessões ----------
@@ -242,17 +300,17 @@ function seedAdmin(): void {
 
   const existing = getUserByEmail(email);
   if (existing) {
-    // Garante que a conta semeada seja admin, mas respeita um banimento deliberado
-    // feito pelo operador (não desbane automaticamente a cada boot).
-    if (existing.role !== "admin") {
-      updateUserFields(existing.id, { role: "admin" });
+    // Garante que a conta semeada seja o super-admin (nível máximo), mas respeita um
+    // banimento deliberado feito pelo operador (não desbane automaticamente a cada boot).
+    if (existing.role !== "superadmin") {
+      updateUserFields(existing.id, { role: "superadmin" });
     }
     return;
   }
 
   const id = crypto.randomUUID();
   db.prepare(
-    "INSERT INTO users (id, name, email, password_hash, plan, role) VALUES (?, ?, ?, ?, 'invest', 'admin')"
+    "INSERT INTO users (id, name, email, password_hash, plan, role) VALUES (?, ?, ?, ?, 'invest', 'superadmin')"
   ).run(id, "Administrador", email, hashPassword(password));
 }
 

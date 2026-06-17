@@ -83,6 +83,27 @@ export function getPlan(id: string | null | undefined): PlanDef | undefined {
   return PLANS.find((p) => p.id === id);
 }
 
+// Hierarquia de acesso por plano. 'free' é o estado padrão (sem assinatura).
+export type AccountPlan = "free" | PlanId;
+
+export const PLAN_RANK: Record<string, number> = {
+  free: 0,
+  standard: 1,
+  pro: 2,
+  invest: 3,
+};
+
+// Retorna true se o plano do usuário atinge (>=) o plano mínimo exigido.
+export function meetsPlan(userPlan: string | null | undefined, minPlan: AccountPlan): boolean {
+  const have = PLAN_RANK[userPlan ?? "free"] ?? 0;
+  const need = PLAN_RANK[minPlan] ?? 0;
+  return have >= need;
+}
+
+export function isAdminRole(role: string | null | undefined): boolean {
+  return role === "admin" || role === "superadmin";
+}
+
 export function formatBRL(value: number): string {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }

@@ -13,6 +13,7 @@ import {
   User as UserIcon,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { isAdminRole } from '../constants/plans';
 import { cn } from '../lib/utils';
 
 interface AdminUser {
@@ -42,7 +43,7 @@ export default function Admin() {
 
   // Bloqueio de acesso: usuários comuns são redirecionados para fora.
   useEffect(() => {
-    if (!loading && (!user || user.role !== 'admin')) {
+    if (!loading && (!user || !isAdminRole(user.role))) {
       navigate('/', { replace: true });
     }
   }, [loading, user, navigate]);
@@ -68,7 +69,7 @@ export default function Admin() {
   }, [authHeaders]);
 
   useEffect(() => {
-    if (user?.role === 'admin' && token) {
+    if (isAdminRole(user?.role) && token) {
       loadUsers();
     }
   }, [user, token, loadUsers]);
@@ -138,7 +139,7 @@ export default function Admin() {
     );
   }, [users, query]);
 
-  if (loading || !user || user.role !== 'admin') {
+  if (loading || !user || !isAdminRole(user.role)) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <Loader2 className="animate-spin text-brand-500" size={32} />
@@ -146,11 +147,13 @@ export default function Admin() {
     );
   }
 
+  const actorSuper = user.role === 'superadmin';
+
   const inputClass =
     'w-full rounded-lg border border-zinc-200/80 bg-white/80 px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500/40 outline-none dark:border-zinc-800/60 dark:bg-zinc-950/80 dark:text-zinc-200';
 
   const bannedCount = users.filter((u) => u.banned).length;
-  const adminCount = users.filter((u) => u.role === 'admin').length;
+  const adminCount = users.filter((u) => u.role === 'admin' || u.role === 'superadmin').length;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
@@ -228,6 +231,14 @@ export default function Admin() {
           filtered.map((u) => {
             const isSelf = u.id === user.id;
             const isSaving = savingId === u.id;
+            const isSuperRow = u.role === 'superadmin';
+            const targetAdminish = u.role === 'admin' || isSuperRow;
+            // Permissões por linha (espelham as regras do backend):
+            const canManageRow = isSelf || actorSuper || !targetAdminish; // nome/email/plano
+            const canChangeRole = actorSuper && !isSuperRow && !isSelf; // conceder/remover admin
+            const canBan = !isSelf && !isSuperRow && (actorSuper || !targetAdminish);
+            const canDelete = !isSelf && !isSuperRow && (actorSuper || !targetAdminish);
+            const canSave = canManageRow || canChangeRole || canBan;
             return (
               <div
                 key={u.id}
@@ -246,7 +257,8 @@ export default function Admin() {
                     <input
                       value={u.name}
                       onChange={(e) => patchField(u.id, 'name', e.target.value)}
-                      className={inputClass}
+                      disabled={!canManageRow}
+                      className={cn(inputClass, !canManageRow && 'cursor-not-allowed opacity-50')}
                     />
                   </div>
                   <div className="lg:col-span-3">
@@ -256,7 +268,8 @@ export default function Admin() {
                     <input
                       value={u.email}
                       onChange={(e) => patchField(u.id, 'email', e.target.value)}
-                      className={inputClass}
+                      disabled={!canManageRow}
+                      className={cn(inputClass, !canManageRow && 'cursor-not-allowed opacity-50')}
                     />
                   </div>
                   <div className="lg:col-span-2">
@@ -266,7 +279,8 @@ export default function Admin() {
                     <select
                       value={u.plan}
                       onChange={(e) => patchField(u.id, 'plan', e.target.value)}
-                      className={inputClass}
+                      disabled={!canManageRow}
+                      className={cn(inputClass, !canManageRow && 'cursor-not-allowed opacity-50')}
                     >
                       {PLAN_OPTIONS.map((p) => (
                         <option key={p} value={p}>
@@ -279,26 +293,48 @@ export default function Admin() {
                     <label className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-zinc-400">
                       Papel
                     </label>
-                    <select
-                      value={u.role}
-                      onChange={(e) => patchField(u.id, 'role', e.target.value)}
-                      disabled={isSelf}
-                      title={isSelf ? 'Você não pode alterar seu próprio papel' : undefined}
-                      className={cn(inputClass, isSelf && 'cursor-not-allowed opacity-50')}
-                    >
-                      {ROLE_OPTIONS.map((r) => (
-                        <option key={r} value={r}>
-                          {r}
-                        </option>
-                      ))}
-                    </select>
+                    {isSuperRow ? (
+                      <div className="flex h-[38px] items-center gap-1.5 rounded-lg border border-amber-300/60 bg-amber-50 px-3 text-xs font-bold uppercase tracking-wide text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400">
+                        <Crown size={13} /> Principal
+                      </div>
+                    ) : (
+                      <select
+                        value={u.role}
+                        onChange={(e) => patchField(u.id, 'role', e.target.value)}
+                        disabled={!canChangeRole}
+                        title={
+                          !canChangeRole
+                            ? isSelf
+                              ? 'Você não pode alterar seu próprio papel'
+                              : 'Apenas o administrador principal altera papéis'
+                            : undefined
+                        }
+                        className={cn(inputClass, !canChangeRole && 'cursor-not-allowed opacity-50')}
+                      >
+                        {ROLE_OPTIONS.map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 lg:col-span-2 lg:justify-end">
                     <button
                       type="button"
                       onClick={() => patchField(u.id, 'banned', !u.banned)}
-                      disabled={isSelf}
-                      title={isSelf ? 'Você não pode banir a si mesmo' : u.banned ? 'Desbanir' : 'Banir'}
+                      disabled={!canBan}
+                      title={
+                        !canBan
+                          ? isSelf
+                            ? 'Você não pode banir a si mesmo'
+                            : isSuperRow
+                              ? 'A conta principal não pode ser banida'
+                              : 'Apenas o administrador principal pode banir admins'
+                          : u.banned
+                            ? 'Desbanir'
+                            : 'Banir'
+                      }
                       className={cn(
                         'flex h-10 items-center gap-1.5 rounded-lg px-3 text-xs font-bold transition-all disabled:cursor-not-allowed disabled:opacity-40',
                         u.banned
@@ -312,17 +348,25 @@ export default function Admin() {
                     <button
                       type="button"
                       onClick={() => handleSave(u)}
-                      disabled={isSaving}
+                      disabled={isSaving || !canSave}
                       title="Salvar alterações"
-                      className="flex h-10 w-10 items-center justify-center rounded-lg gold-gradient-bg text-white shadow-md transition-all hover:opacity-90 active:scale-95 disabled:opacity-60"
+                      className="flex h-10 w-10 items-center justify-center rounded-lg gold-gradient-bg text-white shadow-md transition-all hover:opacity-90 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                     </button>
                     <button
                       type="button"
                       onClick={() => handleDelete(u)}
-                      disabled={isSaving || isSelf}
-                      title={isSelf ? 'Você não pode excluir a si mesmo' : 'Excluir usuário'}
+                      disabled={isSaving || !canDelete}
+                      title={
+                        !canDelete
+                          ? isSelf
+                            ? 'Você não pode excluir a si mesmo'
+                            : isSuperRow
+                              ? 'A conta principal não pode ser excluída'
+                              : 'Apenas o administrador principal pode excluir admins'
+                          : 'Excluir usuário'
+                      }
                       className="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-100 text-rose-500 transition-all hover:bg-rose-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-zinc-800 dark:hover:bg-rose-900/30"
                     >
                       <Trash2 size={16} />

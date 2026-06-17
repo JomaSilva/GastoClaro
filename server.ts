@@ -6,7 +6,14 @@ import { createServer as createViteServer } from "vite";
 import YahooFinance from "yahoo-finance2";
 import { analyzeAsset, generateBatchSignals, processExpenses } from "./server/anthropic";
 import { fetchAssetNews, summarizeNewsCoverage } from "./server/news";
-import { createAuthRouter, createCheckoutRouter, createAdminRouter, fulfillStripeCheckout } from "./server/auth";
+import {
+  createAuthRouter,
+  createCheckoutRouter,
+  createAdminRouter,
+  createReportsRouter,
+  fulfillStripeCheckout,
+  requirePlan,
+} from "./server/auth";
 import { verifyStripeWebhook } from "./server/payments";
 
 const yahooFinance = new YahooFinance();
@@ -58,9 +65,10 @@ async function startServer() {
   // Autenticação local (SQLite), painel administrativo e checkout de planos
   app.use("/api/auth", createAuthRouter());
   app.use("/api/admin", createAdminRouter());
+  app.use("/api/reports", createReportsRouter());
   app.use("/api/checkout", createCheckoutRouter());
 
-  app.post("/api/ai/process-expenses", async (req, res) => {
+  app.post("/api/ai/process-expenses", requirePlan("standard"), async (req, res) => {
     try {
       const { text = "", imagesData = [] } = req.body ?? {};
 
@@ -77,7 +85,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/ai/generate-batch-signals", async (req, res) => {
+  app.post("/api/ai/generate-batch-signals", requirePlan("standard"), async (req, res) => {
     try {
       const { marketData = [] } = req.body ?? {};
 
@@ -94,7 +102,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/ai/analyze-asset", async (req, res) => {
+  app.post("/api/ai/analyze-asset", requirePlan("standard"), async (req, res) => {
     try {
       const { symbol, contextData } = req.body ?? {};
 

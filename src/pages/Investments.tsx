@@ -154,7 +154,6 @@ function AssetDetailsModal({ asset, onClose }: { asset: any, onClose: () => void
           <div>
             <div className="flex items-center gap-4 mb-2">
               <h2 className="text-4xl font-light text-zinc-900 dark:text-white tracking-tight font-serif">{asset.ticker}</h2>
-              <SignalBadge signal={asset.signal} />
             </div>
             <p className="text-sm font-light text-zinc-500 dark:text-zinc-400 uppercase tracking-widest">{asset.name} · {asset.sector}</p>
           </div>
@@ -453,10 +452,70 @@ function SignalsScreen({ signals, onSelectAsset, isAnalyzing }: { signals: any[]
   );
 }
 
-function ScannerScreen() {
+// Linha de ativo clicável reutilizada na busca e nos resultados do Scanner.
+function ScannerAssetRow({
+  asset,
+  onClick,
+  score,
+}: {
+  asset: any;
+  onClick: () => void;
+  score?: number;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="glass flex w-full items-center justify-between rounded-2xl border border-zinc-200 p-4 text-left transition-all hover:border-brand-500/40 active:scale-[0.99] dark:border-zinc-800"
+    >
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-zinc-100 text-[11px] font-bold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+          {(asset.ticker || '?').toString().slice(0, 5)}
+        </div>
+        <div>
+          <div className="font-mono text-sm font-bold text-zinc-900 dark:text-white">{asset.ticker}</div>
+          <div className="text-[10px] text-zinc-500 dark:text-zinc-400">
+            {asset.name}
+            {asset.sector ? ` · ${asset.sector}` : ''}
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-4">
+        <div className="text-right">
+          <div className="text-sm font-medium text-zinc-900 dark:text-white">{asset.price}</div>
+          <div
+            className={cn(
+              'flex items-center justify-end gap-0.5 text-[11px] font-bold',
+              asset.change > 0 ? 'text-emerald-600' : asset.change < 0 ? 'text-rose-600' : 'text-zinc-400'
+            )}
+          >
+            {asset.change > 0 ? <TrendingUp size={11} /> : asset.change < 0 ? <TrendingDown size={11} /> : <Minus size={11} />}
+            {Math.abs(asset.change ?? 0)}%
+          </div>
+        </div>
+        {typeof score === 'number' && (
+          <div className="rounded-lg bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+            {score}
+          </div>
+        )}
+        <ChevronRight size={16} className="text-zinc-300 dark:text-zinc-600" />
+      </div>
+    </button>
+  );
+}
+
+function ScannerScreen({
+  signals,
+  onSelectAsset,
+}: {
+  signals: any[];
+  onSelectAsset: (asset: any) => void;
+}) {
   const [scanning, setScanning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [results, setResults] = useState<any[]>([]);
+  const [query, setQuery] = useState('');
+
   const criteria = [
     { label: "RSI abaixo de 40 (Sobrevenda)", active: true },
     { label: "Cruzamento MACD de alta", active: true },
@@ -466,29 +525,68 @@ function ScannerScreen() {
     { label: "P/L abaixo da média setorial", active: true },
   ];
 
+  const q = query.trim().toLowerCase();
+  const matches = q
+    ? signals.filter(
+        (s) =>
+          (s.ticker || '').toString().toLowerCase().includes(q) ||
+          (s.name || '').toString().toLowerCase().includes(q)
+      )
+    : signals;
+
   const runScan = () => {
     setScanning(true);
     setProgress(0);
     setResults([]);
     const iv = setInterval(() => {
-      setProgress(p => {
+      setProgress((p) => {
         if (p >= 100) {
           clearInterval(iv);
           setScanning(false);
-          setResults([
-            { ticker: "WEGE3", match: 4, score: 91 },
-            { ticker: "SUZB3", match: 4, score: 84 },
-            { ticker: "RENT3", match: 3, score: 76 },
-          ]);
+          // Resultados reais: ativos correspondentes ordenados pela força do sinal.
+          const scored = [...matches]
+            .sort((a, b) => (b.strength || 0) - (a.strength || 0))
+            .slice(0, 8);
+          setResults(scored);
           return 100;
         }
         return p + 5;
       });
-    }, 80);
+    }, 60);
   };
 
   return (
     <div className="space-y-6">
+      {/* Barra de pesquisa */}
+      <div className="relative">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Buscar ativo por nome ou ticker (ex: PETR4, Apple, NVDA)..."
+          className="w-full rounded-2xl border border-zinc-200 bg-white/70 py-3 pl-11 pr-4 text-sm outline-none transition-all focus:ring-2 focus:ring-brand-500/40 dark:border-zinc-800 dark:bg-zinc-950/60 dark:text-zinc-200 dark:placeholder:text-zinc-600"
+        />
+      </div>
+
+      {/* Resultados da busca ao vivo (clicáveis) */}
+      {q && (
+        <div className="space-y-3">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
+            {matches.length} resultado(s) para “{query}”
+          </h3>
+          {matches.length === 0 ? (
+            <p className="py-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
+              Nenhum ativo encontrado. Tente o ticker (ex: VALE3, AAPL).
+            </p>
+          ) : (
+            matches
+              .slice(0, 12)
+              .map((s, i) => <ScannerAssetRow key={i} asset={s} onClick={() => onSelectAsset(s)} />)
+          )}
+        </div>
+      )}
+
+      {/* Critérios */}
       <div className="space-y-4">
         <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-500 dark:text-zinc-400 flex items-center gap-2">
           <Search size={14} className="text-brand-500" /> Critérios de Varredura
@@ -514,13 +612,13 @@ function ScannerScreen() {
         </div>
       </div>
 
-      <button 
-        onClick={runScan} 
-        disabled={scanning} 
+      <button
+        onClick={runScan}
+        disabled={scanning}
         className={cn(
           "w-full py-4 rounded-2xl font-bold text-sm tracking-wide transition-all active:scale-95",
-          scanning 
-            ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-400 cursor-not-allowed" 
+          scanning
+            ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-400 cursor-not-allowed"
             : "bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-100 shadow-lg"
         )}
       >
@@ -530,13 +628,13 @@ function ScannerScreen() {
       {scanning && (
         <div className="glass rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800">
           <div className="h-1.5 w-full bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-gradient-to-r from-brand-500 to-emerald-500 transition-all duration-100" 
-              style={{ width: `${progress}%` }} 
+            <div
+              className="h-full bg-gradient-to-r from-brand-500 to-emerald-500 transition-all duration-100"
+              style={{ width: `${progress}%` }}
             />
           </div>
           <div className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-3 text-center font-medium">
-            Analisando 423 ativos do IBOVESPA, Small Caps e FIIs...
+            Analisando ativos do IBOVESPA, mercado americano e cripto...
           </div>
         </div>
       )}
@@ -544,19 +642,15 @@ function ScannerScreen() {
       {results.length > 0 && (
         <div className="space-y-3">
           <h3 className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-2">
-            <TrendingUp size={14} /> ✓ {results.length} Ativos Encontrados
+            <TrendingUp size={14} /> ✓ {results.length} ativos encontrados — clique para ver os detalhes
           </h3>
           {results.map((r, i) => (
-            <div key={i} className="glass rounded-2xl p-4 border border-emerald-500/20 relative overflow-hidden">
-              <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500" />
-              <div className="flex items-center justify-between">
-                <span className="text-xl font-light text-zinc-900 dark:text-white font-serif font-mono">{r.ticker}</span>
-                <span className="text-sm font-bold text-emerald-600">Score: {r.score}</span>
-              </div>
-              <div className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1">
-                {r.match} de 4 critérios atendidos
-              </div>
-            </div>
+            <ScannerAssetRow
+              key={i}
+              asset={r}
+              score={typeof r.strength === 'number' ? r.strength : undefined}
+              onClick={() => onSelectAsset(r)}
+            />
           ))}
         </div>
       )}
@@ -648,7 +742,13 @@ function SentimentScreen() {
   );
 }
 
-function WatchlistScreen({ signals }: { signals: any[] }) {
+function WatchlistScreen({
+  signals,
+  onSelectAsset,
+}: {
+  signals: any[];
+  onSelectAsset: (asset: any) => void;
+}) {
   const [items, setItems] = useState<any[]>([]);
   const [adding, setAdding] = useState(false);
   const [input, setInput] = useState("");
@@ -676,8 +776,10 @@ function WatchlistScreen({ signals }: { signals: any[] }) {
   const handleAdd = () => {
     const ticker = input.toUpperCase().trim();
     if (!ticker) return;
-    setItems(prev => [...prev, {
-      ticker, name: ticker, price: "—", change: 0,
+    // Se o ticker já existe nos sinais, reaproveita symbol/currency/region/preço.
+    const match = signals.find((s) => (s.ticker || '').toString().toUpperCase() === ticker);
+    setItems(prev => [...prev, match ? { ...match, alerted: false } : {
+      ticker, symbol: ticker, name: ticker, price: "—", change: 0,
       signal: "NEUTRO", strength: 50, sector: "—", alerted: false,
     }]);
     setInput("");
@@ -731,7 +833,11 @@ function WatchlistScreen({ signals }: { signals: any[] }) {
       {/* List */}
       <div className="space-y-3">
         {items.map((item, i) => (
-          <div key={i} className="glass rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 relative overflow-hidden group">
+          <div
+            key={i}
+            onClick={() => onSelectAsset(item)}
+            className="glass rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 relative overflow-hidden group cursor-pointer transition-all hover:border-brand-500/30"
+          >
             <div className={cn(
               "absolute left-0 top-0 bottom-0 w-1",
               item.signal === "COMPRA" ? "bg-emerald-500" : item.signal === "VENDA" ? "bg-rose-500" : "bg-brand-500"
@@ -755,19 +861,19 @@ function WatchlistScreen({ signals }: { signals: any[] }) {
                     {item.change !== 0 ? Math.abs(item.change) + "%" : "0.0%"}
                   </div>
                 </div>
-                <button 
-                  onClick={() => toggleAlert(i)} 
+                <button
+                  onClick={(e) => { e.stopPropagation(); toggleAlert(i); }}
                   className={cn(
                     "w-10 h-10 rounded-xl flex items-center justify-center transition-all border",
-                    item.alerted 
-                      ? "bg-brand-50 border-brand-200 text-brand-600 dark:bg-brand-900/30 dark:border-brand-800 dark:text-brand-400" 
+                    item.alerted
+                      ? "bg-brand-50 border-brand-200 text-brand-600 dark:bg-brand-900/30 dark:border-brand-800 dark:text-brand-400"
                       : "bg-zinc-50 border-zinc-200 text-zinc-400 dark:bg-zinc-900 dark:border-zinc-800 dark:text-zinc-600"
                   )}
                 >
                   {item.alerted ? <Bell size={18} fill="currentColor" /> : <BellOff size={18} />}
                 </button>
-                <button 
-                  onClick={() => removeItem(i)} 
+                <button
+                  onClick={(e) => { e.stopPropagation(); removeItem(i); }}
                   className="text-zinc-300 hover:text-rose-500 transition-colors p-1"
                 >
                   <X size={18} />
@@ -896,8 +1002,8 @@ export default function Investments() {
   const tabs = [
     { id: "radar", label: "Radar", icon: Radar, component: <RadarScreen signals={visibleSignals} onSelectAsset={setSelectedAsset} isAnalyzing={isAnalyzingSignals} /> },
     { id: "signals", label: "Sinais", icon: Zap, component: <SignalsScreen signals={visibleSignals} onSelectAsset={setSelectedAsset} isAnalyzing={isAnalyzingSignals} /> },
-    { id: "scanner", label: "Scanner", icon: Search, component: <ScannerScreen /> },
-    { id: "watchlist", label: "Watchlist", icon: Star, component: <WatchlistScreen signals={visibleSignals} /> },
+    { id: "scanner", label: "Scanner", icon: Search, component: <ScannerScreen signals={visibleSignals} onSelectAsset={setSelectedAsset} /> },
+    { id: "watchlist", label: "Watchlist", icon: Star, component: <WatchlistScreen signals={visibleSignals} onSelectAsset={setSelectedAsset} /> },
     { id: "sentiment", label: "Sentimento", icon: BarChart3, component: <SentimentScreen /> },
   ];
 

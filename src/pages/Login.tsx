@@ -8,7 +8,7 @@ import { cn } from '../lib/utils';
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, config } = useAuth();
+  const { login } = useAuth();
 
   // Se o usuário veio da tela de planos, voltamos para o pagamento depois do login
   const redirectTo = (location.state as { redirectTo?: string } | null)?.redirectTo || '/dashboard';
@@ -94,21 +94,19 @@ export default function Login() {
           </button>
         </form>
 
-        {config.googleClientId && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
-              <span className="text-[11px] font-semibold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
-                ou
-              </span>
-              <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
-            </div>
-            <GoogleSignInButton
-              onSuccess={() => navigate(redirectTo, { replace: true })}
-              onError={setError}
-            />
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
+            <span className="text-[11px] font-semibold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+              ou
+            </span>
+            <div className="h-px flex-1 bg-zinc-200 dark:bg-zinc-800" />
           </div>
-        )}
+          <GoogleSignInButton
+            onSuccess={() => navigate(redirectTo, { replace: true })}
+            onError={setError}
+          />
+        </div>
 
         <p className="text-center text-sm text-zinc-600 dark:text-zinc-400">
           Não tem uma conta?{' '}

@@ -6,10 +6,13 @@ type ImagePayload = {
 };
 
 async function postJson<T>(url: string, payload: unknown): Promise<T> {
+  // Anexa o token de sessão (quando houver) para endpoints protegidos por plano.
+  const token = typeof localStorage !== "undefined" ? localStorage.getItem("gastoclaro_token") : null;
   const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify(payload),
   });

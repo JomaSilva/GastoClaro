@@ -18,9 +18,13 @@ import {
   countActiveAdmins,
   createPayment,
   getPaymentByExternalId,
+  createReport,
+  listReportsByUser,
+  getReportById,
+  deleteReport,
   type UserRow,
 } from "./db";
-import { PLANS, type PlanId } from "../src/constants/plans";
+import { PLANS, meetsPlan, isAdminRole, type PlanId, type AccountPlan } from "../src/constants/plans";
 import { isStripeEnabled, createCheckoutSession, retrieveCheckoutSession } from "./payments";
 
 // Ativa o plano a partir de uma sessão de checkout paga da Stripe (idempotente).
@@ -87,12 +91,29 @@ export function requireAuth(req: AuthedRequest, res: Response, next: NextFunctio
 
 export function requireAdmin(req: AuthedRequest, res: Response, next: NextFunction) {
   requireAuth(req, res, () => {
-    if (req.user?.role !== "admin") {
+    if (req.user?.role !== "admin" && req.user?.role !== "superadmin") {
       res.status(403).json({ error: "Acesso restrito a administradores." });
       return;
     }
     next();
   });
+}
+
+// Exige autenticação + plano mínimo (admins/super-admin sempre passam).
+// Garante no servidor o que a proteção de rota faz no cliente.
+export function requirePlan(minPlan: AccountPlan) {
+  return (req: AuthedRequest, res: Response, next: NextFunction) => {
+    requireAuth(req, res, () => {
+      const user = req.user!;
+      if (isAdminRole(user.role) || meetsPlan(user.plan, minPlan)) {
+        next();
+        return;
+      }
+      res.status(403).json({
+        error: "Seu plano atual não dá acesso a este recurso. Faça um upgrade para continuar.",
+      });
+    });
+  };
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -272,6 +293,21 @@ export function createAdminRouter(): Router {
       return;
     }
 
+    const actor = req.user!;
+    const actorSuper = actor.role === "superadmin";
+    const targetIsAdminish = target.role === "admin" || target.role === "superadmin";
+
+    // Hierarquia: a conta principal (superadmin) só pode ser editada por ela mesma.
+    if (target.role === "superadmin" && target.id !== actor.id) {
+      res.status(403).json({ error: "A conta principal de administrador é protegida." });
+      return;
+    }
+    // Admins comuns não gerenciam outros administradores — só o super-admin.
+    if (!actorSuper && targetIsAdminish && target.id !== actor.id) {
+      res.status(403).json({ error: "Apenas o administrador principal pode gerenciar outros administradores." });
+      return;
+    }
+
     const { name, email, plan, role, banned } = req.body ?? {};
     const fields: {
       name?: string;
@@ -313,13 +349,18 @@ export function createAdminRouter(): Router {
       fields.plan = plan;
     }
 
-    if (role !== undefined) {
+    if (role !== undefined && role !== target.role) {
       if (role !== "user" && role !== "admin") {
         res.status(400).json({ error: "Papel inválido." });
         return;
       }
-      if (target.id === req.user!.id && role !== "admin") {
-        res.status(400).json({ error: "Você não pode remover seu próprio acesso de administrador." });
+      // Só o super-admin concede/remove o papel de administrador.
+      if (!actorSuper) {
+        res.status(403).json({ error: "Apenas o administrador principal pode alterar papéis." });
+        return;
+      }
+      if (target.role === "superadmin") {
+        res.status(403).json({ error: "Não é possível alterar o papel do administrador principal." });
         return;
       }
       fields.role = role;
@@ -330,8 +371,12 @@ export function createAdminRouter(): Router {
         res.status(400).json({ error: "Valor de banimento inválido." });
         return;
       }
-      if (target.id === req.user!.id && banned) {
+      if (target.id === actor.id && banned) {
         res.status(400).json({ error: "Você não pode banir a si mesmo." });
+        return;
+      }
+      if (banned && targetIsAdminish && !actorSuper) {
+        res.status(403).json({ error: "Apenas o administrador principal pode banir outro administrador." });
         return;
       }
       fields.banned = banned;
@@ -361,11 +406,76 @@ export function createAdminRouter(): Router {
       res.status(404).json({ error: "Usuário não encontrado." });
       return;
     }
-    if (target.role === "admin" && countActiveAdmins(target.id) < 1) {
+    const actorSuper = req.user!.role === "superadmin";
+    if (target.role === "superadmin") {
+      res.status(403).json({ error: "A conta principal de administrador não pode ser excluída." });
+      return;
+    }
+    if (target.role === "admin" && !actorSuper) {
+      res.status(403).json({ error: "Apenas o administrador principal pode excluir outro administrador." });
+      return;
+    }
+    if (
+      (target.role === "admin" || target.role === "superadmin") &&
+      countActiveAdmins(target.id) < 1
+    ) {
       res.status(400).json({ error: "Deve permanecer ao menos um administrador ativo." });
       return;
     }
     deleteUser(target.id);
+    res.json({ ok: true });
+  });
+
+  return router;
+}
+
+// ---------- Histórico de relatórios do Dashboard (por usuário) ----------
+export function createReportsRouter(): Router {
+  const router = express.Router();
+
+  // POST /api/reports — salva um relatório no histórico do usuário autenticado
+  router.post("/", requireAuth, (req: AuthedRequest, res) => {
+    const report = req.body?.report ?? req.body;
+    if (!report || typeof report !== "object" || Array.isArray(report)) {
+      res.status(400).json({ error: "Relatório inválido." });
+      return;
+    }
+    const saved = createReport(req.user!.id, report);
+    res.status(201).json({ id: saved.id, createdAt: saved.created_at });
+  });
+
+  // GET /api/reports — lista o histórico (resumos) do usuário
+  router.get("/", requireAuth, (req: AuthedRequest, res) => {
+    const reports = listReportsByUser(req.user!.id).map((r) => ({
+      id: r.id,
+      totalAmount: r.total_amount,
+      highestCategory: r.highest_category,
+      itemCount: r.item_count,
+      monthReference: r.month_reference,
+      createdAt: r.created_at,
+    }));
+    res.json({ reports });
+  });
+
+  // GET /api/reports/:id — relatório completo (apenas do próprio usuário)
+  router.get("/:id", requireAuth, (req: AuthedRequest, res) => {
+    const row = getReportById(req.params.id, req.user!.id);
+    if (!row) {
+      res.status(404).json({ error: "Relatório não encontrado." });
+      return;
+    }
+    let report: any = {};
+    try {
+      report = JSON.parse(row.payload);
+    } catch {
+      report = {};
+    }
+    res.json({ id: row.id, createdAt: row.created_at, report });
+  });
+
+  // DELETE /api/reports/:id — remove um relatório do histórico
+  router.delete("/:id", requireAuth, (req: AuthedRequest, res) => {
+    deleteReport(req.params.id, req.user!.id);
     res.json({ ok: true });
   });
 
