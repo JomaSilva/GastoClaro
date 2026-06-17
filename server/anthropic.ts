@@ -51,9 +51,8 @@ async function callClaude(messages: ClaudeMessage[], options?: { temperature?: n
   if (options?.systemPrompt) {
     body.system = options.systemPrompt;
   }
-  if (typeof options?.temperature === "number") {
-    body.temperature = options.temperature;
-  }
+  // OBS: o parâmetro `temperature` foi descontinuado no claude-opus-4-8 — não enviar
+  // (mesmo recebido em options), senão a API retorna 400 invalid_request_error.
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
