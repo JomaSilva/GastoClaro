@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { useAuth, ApiError } from '../context/AuthContext';
@@ -13,7 +13,16 @@ export default function VerifyEmail() {
   const [status, setStatus] = useState<Status>('loading');
   const [message, setMessage] = useState('');
 
+  // O token de verificação é de uso único (o servidor o apaga após confirmar).
+  // Sem esta trava, o disparo duplo do efeito no React StrictMode (dev) enviaria
+  // duas requisições: a 1ª confirma o e-mail e a 2ª recebe "link já utilizado",
+  // sobrescrevendo a tela de sucesso com um erro. Garante exatamente um envio.
+  const hasVerified = useRef(false);
+
   useEffect(() => {
+    if (hasVerified.current) return;
+    hasVerified.current = true;
+
     const token = searchParams.get('token');
     if (!token) {
       setStatus('error');
