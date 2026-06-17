@@ -8,12 +8,30 @@ export interface AuthUser {
   role: string;
   banned?: boolean;
   authProvider?: string;
+  emailVerified?: boolean;
   createdAt: string;
+}
+
+export class ApiError extends Error {
+  readonly code?: string;
+  readonly email?: string;
+  constructor(message: string, code?: string, email?: string) {
+    super(message);
+    this.code = code;
+    this.email = email;
+  }
 }
 
 export interface AppConfig {
   googleClientId: string | null;
   stripeEnabled: boolean;
+}
+
+export interface RegisterResult {
+  user?: AuthUser;
+  needsVerification?: boolean;
+  email?: string;
+  devLink?: string;
 }
 
 interface AuthContextValue {
@@ -23,7 +41,8 @@ interface AuthContextValue {
   config: AppConfig;
   login: (email: string, password: string) => Promise<AuthUser>;
   loginWithGoogle: (credential: string) => Promise<AuthUser>;
-  register: (name: string, email: string, password: string) => Promise<AuthUser>;
+  register: (name: string, email: string, password: string) => Promise<RegisterResult>;
+  resendVerification: (email: string) => Promise<{ devLink?: string }>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -42,9 +61,13 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
       ...(options.headers || {}),
     },
   });
-  const data = await res.json().catch(() => ({}));
+  const data = await res.json().catch(() => ({})) as Record<string, unknown>;
   if (!res.ok) {
-    throw new Error((data as { error?: string }).error || 'Erro inesperado. Tente novamente.');
+    throw new ApiError(
+      (data.error as string) || 'Erro inesperado. Tente novamente.',
+      data.code as string | undefined,
+      data.email as string | undefined,
+    );
   }
   return data as T;
 }
@@ -113,12 +136,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return handleAuth(data);
   };
 
-  const register = async (name: string, email: string, password: string) => {
-    const data = await api<{ token: string; user: AuthUser }>('/api/auth/register', {
+  const register = async (name: string, email: string, password: string): Promise<RegisterResult> => {
+    const data = await api<{ needsVerification?: boolean; email?: string; devLink?: string; token?: string; user?: AuthUser }>(
+      '/api/auth/register',
+      { method: 'POST', body: JSON.stringify({ name, email, password }) }
+    );
+    if (data.needsVerification) {
+      return { needsVerification: true, email: data.email, devLink: data.devLink };
+    }
+    if (data.token && data.user) {
+      const user = handleAuth(data as { token: string; user: AuthUser });
+      return { user };
+    }
+    return {};
+  };
+
+  const resendVerification = async (email: string): Promise<{ devLink?: string }> => {
+    const data = await api<{ ok: boolean; devLink?: string }>('/api/auth/resend-verification', {
       method: 'POST',
-      body: JSON.stringify({ name, email, password }),
+      body: JSON.stringify({ email }),
     });
-    return handleAuth(data);
+    return { devLink: data.devLink };
   };
 
   const logout = async () => {
@@ -137,7 +175,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, token, loading, config, login, loginWithGoogle, register, logout, refreshUser }}
+      value={{ user, token, loading, config, login, loginWithGoogle, register, resendVerification, logout, refreshUser }}
     >
       {children}
     </AuthContext.Provider>

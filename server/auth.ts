@@ -24,8 +24,13 @@ import {
   deleteReport,
   getUsageCount,
   incrementUsage,
+  createVerificationToken,
+  getVerificationToken,
+  deleteVerificationToken,
+  markEmailVerified,
   type UserRow,
 } from "./db";
+import { sendVerificationEmail } from "./email";
 import { PLANS, getPlan, meetsPlan, isAdminRole, type PlanId, type AccountPlan } from "../src/constants/plans";
 import { isStripeEnabled, createCheckoutSession, retrieveCheckoutSession } from "./payments";
 
@@ -60,6 +65,7 @@ function publicUser(u: UserRow) {
     role: u.role,
     banned: !!u.banned,
     authProvider: u.auth_provider,
+    emailVerified: !!u.email_verified,
     createdAt: u.created_at,
   };
 }
@@ -225,7 +231,7 @@ export function createAuthRouter(): Router {
   });
 
   // POST /api/auth/register
-  router.post("/register", (req, res) => {
+  router.post("/register", async (req, res) => {
     const { name, email, password } = req.body ?? {};
 
     if (typeof name !== "string" || name.trim().length < 2) {
@@ -246,8 +252,27 @@ export function createAuthRouter(): Router {
     }
 
     const user = createUser(name, email, password);
-    const token = createSession(user.id);
-    res.status(201).json({ token, user: publicUser(user) });
+    const verifyToken = createVerificationToken(user.id);
+    const baseUrl =
+      process.env.PUBLIC_BASE_URL ||
+      (typeof req.headers.origin === "string" && req.headers.origin) ||
+      `${req.protocol}://${req.get("host")}`;
+    const verifyLink = `${baseUrl}/verify-email?token=${verifyToken}`;
+
+    const smtpConfigured = !!process.env.SMTP_HOST;
+    if (smtpConfigured) {
+      try {
+        await sendVerificationEmail(user.email, user.name, verifyToken, baseUrl);
+      } catch (err) {
+        console.error("[email] Falha ao enviar e-mail de verificação:", err);
+      }
+    }
+
+    res.status(201).json({
+      needsVerification: true,
+      email: user.email,
+      ...(!smtpConfigured && { devLink: verifyLink }),
+    });
   });
 
   // POST /api/auth/login
@@ -266,6 +291,14 @@ export function createAuthRouter(): Router {
     }
     if (user.banned) {
       res.status(403).json({ error: BANNED_MESSAGE });
+      return;
+    }
+    if (!user.email_verified) {
+      res.status(403).json({
+        error: "Confirme seu e-mail antes de entrar. Verifique sua caixa de entrada.",
+        code: "email_not_verified",
+        email: user.email,
+      });
       return;
     }
 
@@ -327,6 +360,68 @@ export function createAuthRouter(): Router {
 
     const token = createSession(user.id);
     res.json({ token, user: publicUser(user) });
+  });
+
+  // GET /api/auth/verify-email?token=xxx — confirma o e-mail e retorna sessão
+  router.get("/verify-email", (req, res) => {
+    const token = typeof req.query.token === "string" ? req.query.token : "";
+    if (!token) {
+      res.status(400).json({ error: "Token ausente." });
+      return;
+    }
+    const row = getVerificationToken(token);
+    if (!row) {
+      res.status(400).json({ error: "Link inválido ou já utilizado." });
+      return;
+    }
+    if (new Date(row.expires_at).getTime() < Date.now()) {
+      deleteVerificationToken(token);
+      res.status(400).json({ error: "Link expirado. Solicite um novo e-mail de verificação." });
+      return;
+    }
+    markEmailVerified(row.user_id);
+    deleteVerificationToken(token);
+    const user = getUserById(row.user_id);
+    if (!user) {
+      res.status(404).json({ error: "Usuário não encontrado." });
+      return;
+    }
+    const sessionToken = createSession(user.id);
+    res.json({ token: sessionToken, user: publicUser(user) });
+  });
+
+  // POST /api/auth/resend-verification — reenvia o e-mail de verificação
+  router.post("/resend-verification", async (req, res) => {
+    const { email } = req.body ?? {};
+    if (typeof email !== "string" || !EMAIL_RE.test(email.trim())) {
+      res.status(400).json({ error: "E-mail inválido." });
+      return;
+    }
+    const user = getUserByEmail(email);
+    // Resposta genérica para não revelar existência de contas.
+    if (!user || user.email_verified) {
+      res.json({ ok: true });
+      return;
+    }
+    const verifyToken = createVerificationToken(user.id);
+    const baseUrl =
+      process.env.PUBLIC_BASE_URL ||
+      (typeof req.headers.origin === "string" && req.headers.origin) ||
+      `${req.protocol}://${req.get("host")}`;
+    const verifyLink = `${baseUrl}/verify-email?token=${verifyToken}`;
+
+    const smtpConfigured = !!process.env.SMTP_HOST;
+    if (smtpConfigured) {
+      try {
+        await sendVerificationEmail(user.email, user.name, verifyToken, baseUrl);
+      } catch (err) {
+        console.error("[email] Falha ao reenviar e-mail:", err);
+        res.status(502).json({ error: "Falha ao enviar e-mail. Tente novamente mais tarde." });
+        return;
+      }
+    }
+
+    res.json({ ok: true, ...(!smtpConfigured && { devLink: verifyLink }) });
   });
 
   // GET /api/auth/me

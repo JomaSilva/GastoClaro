@@ -1,16 +1,15 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Mail, Lock, ArrowRight, Loader2 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { Mail, Lock, ArrowRight, Loader2, RefreshCw } from 'lucide-react';
+import { useAuth, ApiError } from '../context/AuthContext';
 import { GoogleSignInButton } from '../components/GoogleSignInButton';
 import { cn } from '../lib/utils';
 
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login } = useAuth();
+  const { login, resendVerification } = useAuth();
 
-  // Se o usuário veio da tela de planos, voltamos para o pagamento depois do login
   const redirectTo = (location.state as { redirectTo?: string } | null)?.redirectTo || '/dashboard';
 
   const [email, setEmail] = useState('');
@@ -18,17 +17,43 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
+  const [devLink, setDevLink] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState(false);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setUnverifiedEmail(null);
+    setResendSuccess(false);
     setSubmitting(true);
     try {
       await login(email, password);
       navigate(redirectTo, { replace: true });
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'email_not_verified') {
+        setUnverifiedEmail(err.email || email);
+      }
       setError(err instanceof Error ? err.message : 'Falha ao entrar.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (!unverifiedEmail || resending) return;
+    setResending(true);
+    setResendSuccess(false);
+    setError(null);
+    try {
+      const result = await resendVerification(unverifiedEmail);
+      if (result.devLink) setDevLink(result.devLink);
+      setResendSuccess(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Falha ao reenviar. Tente novamente.');
+    } finally {
+      setResending(false);
     }
   };
 
@@ -45,8 +70,32 @@ export default function Login() {
         </div>
 
         {error && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-400">
-            {error}
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-400 space-y-2">
+            <p>{error}</p>
+            {unverifiedEmail && (
+              <div className="pt-1 space-y-2">
+                {resendSuccess ? (
+                  <p className="text-green-600 dark:text-green-400 font-medium">E-mail reenviado!</p>
+                ) : (
+                  <button
+                    onClick={handleResend}
+                    disabled={resending}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-red-700 underline underline-offset-2 hover:text-red-600 dark:text-red-300 disabled:opacity-60"
+                  >
+                    {resending ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                    Reenviar e-mail de verificação
+                  </button>
+                )}
+                {devLink && (
+                  <a
+                    href={devLink}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-amber-700 underline underline-offset-2 hover:text-amber-600 dark:text-amber-400"
+                  >
+                    Verificar agora (modo dev)
+                  </a>
+                )}
+              </div>
+            )}
           </div>
         )}
 

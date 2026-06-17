@@ -63,6 +63,13 @@ db.exec(`
     count   INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, period, kind)
   );
+
+  CREATE TABLE IF NOT EXISTS email_tokens (
+    token      TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind       TEXT NOT NULL DEFAULT 'verify',
+    expires_at TEXT NOT NULL
+  );
 `);
 
 // ---------- Migrações para bancos já existentes ----------
@@ -78,6 +85,8 @@ ensureColumn("users", "role", "role TEXT NOT NULL DEFAULT 'user'");
 ensureColumn("users", "banned", "banned INTEGER NOT NULL DEFAULT 0");
 ensureColumn("users", "auth_provider", "auth_provider TEXT NOT NULL DEFAULT 'local'");
 ensureColumn("users", "google_id", "google_id TEXT");
+// Existentes ficam verificados (DEFAULT 1); novos cadastros recebem 0 explicitamente.
+ensureColumn("users", "email_verified", "email_verified INTEGER NOT NULL DEFAULT 1");
 ensureColumn("payments", "provider", "provider TEXT NOT NULL DEFAULT 'simulated'");
 ensureColumn("payments", "external_id", "external_id TEXT");
 
@@ -97,6 +106,7 @@ export interface UserRow {
   banned: number;
   auth_provider: string;
   google_id: string | null;
+  email_verified: number;
   created_at: string;
 }
 
@@ -120,7 +130,7 @@ export function verifyPassword(password: string, stored: string): boolean {
 export function createUser(name: string, email: string, password: string): UserRow {
   const id = crypto.randomUUID();
   db.prepare(
-    "INSERT INTO users (id, name, email, password_hash) VALUES (?, ?, ?, ?)"
+    "INSERT INTO users (id, name, email, password_hash, email_verified) VALUES (?, ?, ?, ?, 0)"
   ).run(id, name.trim(), email.trim().toLowerCase(), hashPassword(password));
   return getUserById(id)!;
 }
@@ -144,11 +154,12 @@ export function updateUserPlan(userId: string, plan: string): void {
 }
 
 // Cria um usuário autenticado via Google (sem senha local).
+// Google já garante e-mail verificado, então email_verified = 1.
 export function createGoogleUser(name: string, email: string, googleId: string): UserRow {
   const id = crypto.randomUUID();
   const safeName = name.trim() || email.split("@")[0];
   db.prepare(
-    "INSERT INTO users (id, name, email, password_hash, auth_provider, google_id) VALUES (?, ?, ?, '', 'google', ?)"
+    "INSERT INTO users (id, name, email, password_hash, auth_provider, google_id, email_verified) VALUES (?, ?, ?, '', 'google', ?, 1)"
   ).run(id, safeName, email.trim().toLowerCase(), googleId);
   return getUserById(id)!;
 }
@@ -316,6 +327,35 @@ export function getPaymentByExternalId(externalId: string): { id: string } | und
     | undefined;
 }
 
+// ---------- Verificação de e-mail ----------
+
+export function createVerificationToken(userId: string): string {
+  const token = crypto.randomBytes(32).toString("hex");
+  const expires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  // Remove token anterior do mesmo usuário para evitar acúmulo.
+  db.prepare("DELETE FROM email_tokens WHERE user_id = ? AND kind = 'verify'").run(userId);
+  db.prepare(
+    "INSERT INTO email_tokens (token, user_id, kind, expires_at) VALUES (?, ?, 'verify', ?)"
+  ).run(token, userId, expires);
+  return token;
+}
+
+export function getVerificationToken(
+  token: string
+): { user_id: string; expires_at: string } | undefined {
+  return db
+    .prepare("SELECT user_id, expires_at FROM email_tokens WHERE token = ? AND kind = 'verify'")
+    .get(token) as { user_id: string; expires_at: string } | undefined;
+}
+
+export function deleteVerificationToken(token: string): void {
+  db.prepare("DELETE FROM email_tokens WHERE token = ?").run(token);
+}
+
+export function markEmailVerified(userId: string): void {
+  db.prepare("UPDATE users SET email_verified = 1 WHERE id = ?").run(userId);
+}
+
 // ---------- Seed do administrador ----------
 // Cria (ou promove) a conta de administrador. Pode ser sobrescrito por ADMIN_EMAIL / ADMIN_PASSWORD.
 function seedAdmin(): void {
@@ -334,7 +374,7 @@ function seedAdmin(): void {
 
   const id = crypto.randomUUID();
   db.prepare(
-    "INSERT INTO users (id, name, email, password_hash, plan, role) VALUES (?, ?, ?, ?, 'invest', 'superadmin')"
+    "INSERT INTO users (id, name, email, password_hash, plan, role, email_verified) VALUES (?, ?, ?, ?, 'invest', 'superadmin', 1)"
   ).run(id, "Administrador", email, hashPassword(password));
 }
 

@@ -15,6 +15,7 @@ import Plans from './pages/Plans';
 import Payment from './pages/Payment';
 import PaymentSuccess from './pages/PaymentSuccess';
 import Admin from './pages/Admin';
+import VerifyEmail from './pages/VerifyEmail';
 import { AuthProvider } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
@@ -60,6 +61,7 @@ function AppContent() {
         <Route path="/admin" element={<Admin />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
       </Routes>
       
       <footer className="border-t border-zinc-200/50 bg-white/50 py-16 transition-colors duration-300 dark:border-zinc-800/50 dark:bg-[#09090b]/50 backdrop-blur-sm">
