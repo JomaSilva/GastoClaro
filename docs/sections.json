@@ -1,0 +1,2724 @@
+[
+  {
+    "section_title": "Visão Geral & Arquitetura",
+    "intro": "O GastoClaro é uma aplicação web brasileira de finanças pessoais que combina um frontend em React 19 (Vite) com um backend Node/Express executado via tsx, banco SQLite nativo (node:sqlite) e integração com a IA da Anthropic (Claude). Esta seção apresenta o produto, o problema que ele resolve, a pilha tecnológica completa, a arquitetura de servidor único que serve tanto a API quanto o app React compilado, os scripts npm e as variáveis de ambiente.",
+    "subsections": [
+      {
+        "heading": "O que é o GastoClaro e qual problema resolve",
+        "paragraphs": [
+          "O GastoClaro é descrito no metadata.json como uma ferramenta para \"organizar seus gastos pessoais com inteligência artificial de forma simples e visual\". Na prática, o usuário envia textos e imagens (recibos, extratos, prints) e a IA da Anthropic transforma isso em relatórios estruturados de despesas, eliminando a digitação manual e a categorização tediosa.",
+          "Além do controle de gastos, o produto agrega um módulo de Investimentos com dados de mercado em tempo quase real do Brasil e dos EUA (índices, ações, câmbio e cripto), notícias por ativo e análises geradas por IA. O acesso é estruturado em planos pagos — Standard (R$60), Pro (R$100) e Invest (R$150) — com limites mensais de relatórios, análises de IA, janela de histórico e formatos de exportação efetivamente aplicados no servidor.",
+          "O sistema inclui ainda autenticação local própria (cadastro/login com hash scrypt e sessões por token de 30 dias), login opcional com Google, checkout de pagamento (Stripe real com fallback simulado) e um painel administrativo oculto em /admin com hierarquia de papéis (superadmin, admin, usuário comum)."
+        ]
+      },
+      {
+        "heading": "Pilha tecnológica (versões do package.json)",
+        "paragraphs": [
+          "O projeto é um monorepo de um único package.json (declarado como \"type\": \"module\"), com frontend e backend compartilhando dependências. As versões abaixo refletem exatamente o package.json. Observação: embora firebase, axios e yahoo-finance2 estejam listados, os dados de mercado no server.ts são obtidos via yahoo-finance2."
+        ],
+        "tables": [
+          {
+            "caption": "Frontend (UI e roteamento)",
+            "headers": [
+              "Biblioteca",
+              "Versão",
+              "Papel"
+            ],
+            "rows": [
+              [
+                "react",
+                "^19.0.0",
+                "Biblioteca de UI principal"
+              ],
+              [
+                "react-dom",
+                "^19.0.0",
+                "Renderização React no DOM"
+              ],
+              [
+                "react-router-dom",
+                "^7.13.2",
+                "Roteamento SPA (rotas como /plans, /dashboard, /history, /admin)"
+              ],
+              [
+                "vite",
+                "^6.2.0",
+                "Bundler/dev server (também middleware no Express em dev)"
+              ],
+              [
+                "@vitejs/plugin-react",
+                "^5.0.4",
+                "Plugin React para o Vite"
+              ],
+              [
+                "tailwindcss",
+                "^4.1.14",
+                "Framework CSS utilitário"
+              ],
+              [
+                "@tailwindcss/vite",
+                "^4.1.14",
+                "Integração Tailwind v4 com Vite"
+              ],
+              [
+                "@tailwindcss/typography",
+                "^0.5.19",
+                "Estilos tipográficos para conteúdo Markdown"
+              ],
+              [
+                "lucide-react",
+                "^0.546.0",
+                "Ícones"
+              ],
+              [
+                "motion",
+                "^12.23.24",
+                "Animações"
+              ],
+              [
+                "recharts",
+                "^3.8.0",
+                "Gráficos do dashboard/investimentos"
+              ],
+              [
+                "react-markdown",
+                "^10.1.0",
+                "Renderização de Markdown (saídas da IA)"
+              ],
+              [
+                "clsx",
+                "^2.1.1",
+                "Composição condicional de classes CSS"
+              ],
+              [
+                "tailwind-merge",
+                "^3.5.0",
+                "Resolução de conflitos de classes Tailwind"
+              ]
+            ]
+          },
+          {
+            "caption": "Backend, IA, dados e pagamentos",
+            "headers": [
+              "Biblioteca",
+              "Versão",
+              "Papel"
+            ],
+            "rows": [
+              [
+                "express",
+                "^4.21.2",
+                "Servidor HTTP / API REST"
+              ],
+              [
+                "tsx",
+                "^4.21.0",
+                "Execução direta de TypeScript do servidor (sem build do backend)"
+              ],
+              [
+                "dotenv",
+                "^17.2.3",
+                "Carregamento de .env.local e .env"
+              ],
+              [
+                "yahoo-finance2",
+                "^3.14.0",
+                "Cotações, histórico, quoteSummary e notícias de mercado"
+              ],
+              [
+                "axios",
+                "^1.14.0",
+                "Cliente HTTP"
+              ],
+              [
+                "fast-xml-parser",
+                "^5.5.9",
+                "Parsing de XML (ex.: feeds de notícias)"
+              ],
+              [
+                "firebase",
+                "^12.11.0",
+                "SDK Firebase (dependência presente no projeto)"
+              ],
+              [
+                "node:sqlite (nativo Node 22+)",
+                "embutido no Node",
+                "Banco de dados SQLite, arquivo data/gastoclaro.db"
+              ],
+              [
+                "Anthropic Claude (via API HTTP)",
+                "ANTHROPIC_API_KEY",
+                "Processamento de gastos e análises de ativos"
+              ],
+              [
+                "Stripe (via API HTTP / sem SDK)",
+                "STRIPE_SECRET_KEY",
+                "Checkout real (cartão + Google Pay) e webhooks"
+              ]
+            ]
+          },
+          {
+            "caption": "Ferramentas de desenvolvimento (devDependencies)",
+            "headers": [
+              "Biblioteca",
+              "Versão",
+              "Papel"
+            ],
+            "rows": [
+              [
+                "typescript",
+                "~5.8.2",
+                "Compilador/type-checking (npm run lint = tsc --noEmit)"
+              ],
+              [
+                "@types/express",
+                "^4.17.21",
+                "Tipos do Express"
+              ],
+              [
+                "@types/node",
+                "^22.14.0",
+                "Tipos do Node 22"
+              ],
+              [
+                "autoprefixer",
+                "^10.4.21",
+                "Prefixos CSS"
+              ],
+              [
+                "tailwindcss",
+                "^4.1.14",
+                "Tailwind (também em devDependencies)"
+              ],
+              [
+                "vite",
+                "^6.2.0",
+                "Vite (também em devDependencies)"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Arquitetura de alto nível: um único servidor para API e app React",
+        "paragraphs": [
+          "O GastoClaro NÃO é um app apenas-frontend. O README enfatiza que o app React depende do servidor Node/Express em server.ts para todas as rotas /api/*, incluindo dados de mercado e análise de IA. Existe, portanto, um único processo Express (porta padrão 3000, ou process.env.PORT em produção) que cumpre dois papéis: servir a API REST e entregar o app React.",
+          "A diferença entre desenvolvimento e produção está no final do server.ts. Quando NODE_ENV !== \"production\", o servidor cria um Vite em modo middleware (createViteServer com server.middlewareMode: true e appType: \"spa\") e o registra com app.use(vite.middlewares) — assim o mesmo processo serve a SPA com transformação de módulos do Vite (e HMR, controlado pelo DISABLE_HMR em vite.config.ts). Quando NODE_ENV === \"production\", o servidor serve os arquivos estáticos da pasta dist (express.static) e faz fallback de todas as rotas para dist/index.html (app.get(\"*\")), garantindo o roteamento client-side do react-router-dom.",
+          "Por isso, os passos de produção descritos no README são: npm install, definir as variáveis no host, npm run build (gera dist/) e npm start (sobe o processo Node). O host precisa suportar um processo Node persistente — hospedagem estática pura não basta. O entrypoint do frontend é index.html, que carrega /src/main.tsx como módulo ES.",
+          "Detalhes de robustez no boot: o servidor configura app.set(\"trust proxy\", 1) em produção para montar URLs corretas atrás de proxy HTTPS (X-Forwarded-Proto); carrega variáveis de .env.local e depois .env via dotenv; e registra o webhook da Stripe (POST /api/checkout/webhook) ANTES do express.json, usando express.raw, porque a validação de assinatura HMAC-SHA256 exige o corpo cru. O corpo JSON geral é limitado a 25mb (express.json({ limit: \"25mb\" })) para suportar o envio de imagens em base64."
+        ]
+      },
+      {
+        "heading": "Fluxo de uma requisição (cliente -> Express -> IA/DB/mercado)",
+        "paragraphs": [
+          "O navegador carrega a SPA React servida pelo Express (via Vite em dev, via dist em prod) e faz chamadas a endpoints /api/*. O Express resolve cada requisição em uma de quatro direções principais, dependendo da rota.",
+          "1) Autenticação e dados do usuário: rotas montadas em /api/auth, /api/admin, /api/reports e /api/usage consultam o SQLite local (data/gastoclaro.db) — sessões por token, usuários, relatórios persistidos e contadores de uso (usage_counters). 2) IA: os endpoints /api/ai/process-expenses, /api/ai/analyze-asset e /api/ai/generate-batch-signals exigem requirePlan(\"standard\") e, para os dois primeiros, verificam quota (quotaStatus) antes de chamar a Anthropic; ao concluir, registram o consumo (consumeQuota). Se o limite mensal do plano foi atingido, retornam HTTP 429 sem nem chamar a IA. 3) Mercado: /api/market-data (público), /api/historical/:symbol e /api/asset-context/:symbol usam o yahoo-finance2 para cotações, séries históricas de ~90 dias e quoteSummary, agregando notícias por ativo. 4) Pagamento: /api/checkout cuida do fluxo Stripe (sessão, confirmação e webhook), ativando o plano do usuário no banco.",
+          "Em síntese: cliente React -> Express (autorização por plano e quota) -> integração externa (Anthropic para IA, Yahoo Finance para mercado) ou persistência local (SQLite). O resultado retorna como JSON para o frontend, que renderiza dashboards, relatórios e telas de investimento."
+        ],
+        "bullets": [
+          "GET /api/health — verificação de saúde (status ok + timestamp), sem autenticação.",
+          "POST /api/ai/process-expenses — processa gastos via Claude; 429 se exceder relatórios/mês; 400 para payload inválido; 500 em falha.",
+          "POST /api/ai/analyze-asset — análise profunda de ativo via Claude; 429 se exceder análises de IA/mês.",
+          "POST /api/ai/generate-batch-signals — sinais em lote a partir de marketData (requer plano standard).",
+          "GET /api/market-data — mercado BR + EUA (índices, ações, USDBRL, BTC) com currency e region; público (usado no ticker da home).",
+          "GET /api/historical/:symbol e GET /api/asset-context/:symbol — histórico e contexto/notícias do ativo."
+        ]
+      },
+      {
+        "heading": "Scripts npm",
+        "tables": [
+          {
+            "caption": "Scripts definidos em package.json",
+            "headers": [
+              "Script",
+              "Comando",
+              "Função"
+            ],
+            "rows": [
+              [
+                "npm run dev",
+                "tsx server.ts",
+                "Sobe o servidor Express em modo desenvolvimento com Vite em middleware (HMR/SPA). Cria data/gastoclaro.db no primeiro run."
+              ],
+              [
+                "npm run build",
+                "vite build",
+                "Compila o bundle do frontend para a pasta dist/."
+              ],
+              [
+                "npm start",
+                "NODE_ENV=production tsx server.ts",
+                "Sobe o servidor em produção servindo o dist/ estático com fallback SPA; usa process.env.PORT."
+              ],
+              [
+                "npm run preview",
+                "vite preview",
+                "Pré-visualização do build do Vite (apenas frontend)."
+              ],
+              [
+                "npm run clean",
+                "rm -rf dist",
+                "Remove a pasta de build dist/."
+              ],
+              [
+                "npm run lint",
+                "tsc --noEmit",
+                "Type-checking TypeScript sem emitir arquivos."
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Variáveis de ambiente",
+        "paragraphs": [
+          "As variáveis são carregadas de .env.local (prioritário) e .env. O fluxo de setup recomendado no README é copiar .env.example para .env.local e preencher ao menos ANTHROPIC_API_KEY. A tabela abaixo reflete o .env.example e os usos reais encontrados no código (server.ts, server/auth.ts, server/payments.ts, server/anthropic.ts, server/db.ts e vite.config.ts)."
+        ],
+        "tables": [
+          {
+            "caption": "Variáveis de ambiente do GastoClaro",
+            "headers": [
+              "Variável",
+              "Obrigatória?",
+              "Finalidade"
+            ],
+            "rows": [
+              [
+                "ANTHROPIC_API_KEY",
+                "Obrigatória (para IA)",
+                "Chave da API Anthropic; usada em server/anthropic.ts para processar gastos e gerar análises. Sem ela, os recursos de IA não funcionam."
+              ],
+              [
+                "BRAPI_TOKEN",
+                "Opcional",
+                "Token para cotações alternativas (BRAPI). Documentado no README/.env.example; não está conectado ao caminho atual de mercado, que usa yahoo-finance2."
+              ],
+              [
+                "STRIPE_SECRET_KEY",
+                "Opcional",
+                "Habilita o Stripe Checkout real (cartão + Google Pay) em POST /api/checkout/session. Sem a chave, o app cai no checkout simulado (server/payments.ts)."
+              ],
+              [
+                "STRIPE_WEBHOOK_SECRET",
+                "Opcional (recomendado em produção)",
+                "Segredo do webhook (whsec_...) para validar a assinatura HMAC-SHA256 em POST /api/checkout/webhook; é a fonte de verdade da ativação do plano (server/payments.ts)."
+              ],
+              [
+                "PUBLIC_BASE_URL",
+                "Opcional",
+                "URL pública base do app, usada para montar success_url/cancel_url do Stripe atrás de proxy (server/auth.ts). Opcional em localhost."
+              ],
+              [
+                "GOOGLE_CLIENT_ID",
+                "Opcional",
+                "OAuth Client ID (tipo Web) que habilita o login com Google e a validação do ID token em POST /api/auth/google (server/auth.ts)."
+              ],
+              [
+                "ADMIN_EMAIL",
+                "Opcional (padrão: adm)",
+                "E-mail/usuário da conta super-admin semeada (server/db.ts). Padrão adm; deve ser alterado em produção."
+              ],
+              [
+                "ADMIN_PASSWORD",
+                "Opcional (padrão: adm2070)",
+                "Senha da conta super-admin semeada (server/db.ts). Padrão adm2070; deve ser alterado em produção."
+              ],
+              [
+                "PORT",
+                "Opcional (padrão 3000)",
+                "Porta de escuta do servidor Express; lida em server.ts (Number(process.env.PORT) || 3000), atribuída pelo host em produção."
+              ],
+              [
+                "NODE_ENV",
+                "Opcional",
+                "Define o modo: production ativa dist/ estático + trust proxy; caso contrário, usa Vite em middleware. npm start define production."
+              ],
+              [
+                "DISABLE_HMR",
+                "Opcional",
+                "Quando \"true\", desativa o HMR do Vite em vite.config.ts (usado no AI Studio para evitar flickering)."
+              ]
+            ]
+          }
+        ]
+      }
+    ],
+    "icon": "compass"
+  },
+  {
+    "section_title": "Frontend — Páginas & Componentes",
+    "intro": "Esta seção documenta a camada de apresentação do GastoClaro, construída com React 19, React Router 7 (`react-router-dom`), Tailwind CSS, Recharts, lucide-react e a biblioteca de animações `motion`. A aplicação é montada em `src/main.tsx` (via `createRoot` em modo `StrictMode`) e estruturada em `src/App.tsx`, que define o mapa de rotas, os provedores globais (tema e autenticação) e os elementos persistentes de layout (Navbar, MarketTicker e rodapé). A seguir são detalhados o roteamento, cada página principal, os componentes reutilizáveis, o sistema de temas claro/escuro e os utilitários de exportação (CSV, Excel e PDF).",
+    "subsections": [
+      {
+        "heading": "Estrutura de inicialização e layout global",
+        "paragraphs": [
+          "O ponto de entrada é `src/main.tsx`, que renderiza `<App />` no elemento `#root` envolto em `<StrictMode>`. O componente raiz `App` (em `src/App.tsx`) compõe os provedores na ordem `ThemeProvider` → `AuthProvider` → `Router` (`BrowserRouter`) → `AppContent`.",
+          "`AppContent` aplica a classe `dark` ao contêiner raiz conforme o tema atual (via hook `useTheme`) e renderiza, de forma fixa em todas as rotas, a `Navbar`, o `MarketTicker` (ticker de cotações) e um `footer` com a logo, o aviso de copyright dinâmico (`new Date().getFullYear()`) e o aviso legal de que os sinais são gerados por IA e não constituem recomendação de investimento."
+        ],
+        "bullets": [
+          "Provedores globais: `ThemeProvider` (tema claro/escuro) e `AuthProvider` (sessão/usuário).",
+          "Elementos persistentes em toda rota: `<Navbar />`, `<MarketTicker />` e `<footer>`.",
+          "Identidade visual via classes utilitárias do projeto: `gold-gradient`, `gold-gradient-bg`, `glass`, paleta `brand-*` e `zinc-*` do Tailwind."
+        ]
+      },
+      {
+        "heading": "Mapa de rotas (path → página → proteção)",
+        "paragraphs": [
+          "O roteamento é declarado em `<Routes>` dentro de `AppContent`. As rotas protegidas usam o componente `ProtectedRoute` (em `src/components/ProtectedRoute.tsx`), que exige autenticação (`requireAuth`, padrão `true`) e, opcionalmente, um plano mínimo (`minPlan`). Administradores (`isAdminRole`: papel `admin` ou `superadmin`) ignoram a exigência de plano. Sem usuário autenticado, `ProtectedRoute` redireciona para `/login` preservando o destino em `location.state.redirectTo`; logado mas sem plano suficiente, redireciona para `/plans`."
+        ],
+        "tables": [
+          {
+            "caption": "Rotas definidas em src/App.tsx",
+            "headers": [
+              "Path",
+              "Página (componente)",
+              "Proteção"
+            ],
+            "rows": [
+              [
+                "/",
+                "Home",
+                "Pública"
+              ],
+              [
+                "/dashboard",
+                "Dashboard",
+                "ProtectedRoute minPlan=\"standard\" (login + plano ≥ Standard; admin passa)"
+              ],
+              [
+                "/history",
+                "History",
+                "ProtectedRoute (apenas login, sem exigência de plano)"
+              ],
+              [
+                "/investments",
+                "Investments",
+                "ProtectedRoute minPlan=\"standard\" (login + plano ≥ Standard; admin passa)"
+              ],
+              [
+                "/plans",
+                "Plans",
+                "Pública"
+              ],
+              [
+                "/payment",
+                "Payment",
+                "Pública"
+              ],
+              [
+                "/payment/success",
+                "PaymentSuccess",
+                "Pública"
+              ],
+              [
+                "/admin",
+                "Admin",
+                "Pública na rota; guarda interna na própria página (redireciona não-admins)"
+              ],
+              [
+                "/login",
+                "Login",
+                "Pública"
+              ],
+              [
+                "/register",
+                "Register",
+                "Pública"
+              ]
+            ]
+          }
+        ],
+        "bullets": [
+          "A hierarquia de planos é definida em `PLAN_RANK` (free=0, standard=1, pro=2, invest=3); `meetsPlan(userPlan, minPlan)` retorna verdadeiro quando o rank do usuário é ≥ ao exigido.",
+          "Observação: `/admin` não é embrulhada por `ProtectedRoute` no `App.tsx`; a proteção é feita dentro do próprio `Admin.tsx`, que redireciona para `/` quando não há usuário ou quando `isAdminRole(user.role)` é falso."
+        ]
+      },
+      {
+        "heading": "Home — landing page (/)",
+        "paragraphs": [
+          "Página de marketing pública (`src/pages/Home.tsx`). Apresenta um herói com posicionamento premium (\"Wealth Management & AI\"), animado com `motion` (entradas com `initial`/`animate` e `transition`), elementos de fundo com blur e dois CTAs principais: `Link` para `/dashboard` (\"Acessar Dashboard\") e `/investments` (\"Explorar Ativos\").",
+          "Inclui um mock visual de \"Gestão Inteligente\" e \"Sinais Institucionais\" (ex.: ticker PETR4 com selo \"Forte Compra\"), uma grade de 6 features (Concierge Financeiro, Radar Premium, Filtros Avançados, Termômetro Social, Insights Exclusivos, Monitoramento VIP) com ícones lucide-react, e um bloco final de conversão com CTAs para `/register` (\"Solicitar Acesso\") e `/investments` (\"Ver Portfólio\")."
+        ]
+      },
+      {
+        "heading": "Dashboard — fluxo de análise de gastos (/dashboard)",
+        "paragraphs": [
+          "Página central do produto (`src/pages/Dashboard.tsx`), protegida por plano mínimo Standard. Possui dois estados alternados via `AnimatePresence`/`motion`: o estado de entrada (sem relatório) e o estado de resultados (com relatório).",
+          "No estado de entrada, o usuário descreve os gastos em linguagem natural num `textarea` e/ou anexa imagens de faturas/extratos (input `file` múltiplo, `accept=\"image/*\"`). Imagens acima de 4MB são rejeitadas com mensagem de erro; cada imagem ganha um `id` via `crypto.randomUUID()` e um preview. Ao clicar em \"Analisar Gastos\", `handleProcess` converte as imagens para base64 (`fileToBase64`) e chama `processExpenses` (serviço Claude). O resultado é salvo em `localStorage` sob a chave `last_report` e persistido no histórico via `POST /api/reports` (fire-and-forget) com `Authorization: Bearer <token>`.",
+          "Indicadores de uso (`UsageBadge`) são carregados de `GET /api/usage` e exibem \"Relatórios/mês\" e \"Análises IA/mês\" como `usado/limite` (ou `ilimitado`); ao atingir o limite, o badge fica em estado vermelho e surge um link \"Fazer upgrade →\" para `/plans`. Erros do servidor (ex.: limite mensal atingido) são exibidos com a mensagem real retornada.",
+          "No estado de resultados, são exibidos quatro cartões de KPI (Total Geral via `formatCurrency(report.total_amount)`, Maior Categoria `report.highest_category`, Itens Processados `report.categorized_items.length` e Status \"Analisado\"), seguidos dos gráficos (`ExpenseCharts` sobre `report.category_totals`), da tabela de detalhamento (`ExpenseTable`) e dos cartões de inteligência (`InsightCards` com `insights` e `recommendations`)."
+        ],
+        "bullets": [
+          "Exportações disponíveis no cabeçalho de resultados: CSV (`downloadCSV`), Excel (`downloadExcel`), PDF (`exportPDF`) e \"Copiar p/ Planilha\" (`copyToGoogleSheets`, com feedback temporário \"Copiado!\").",
+          "Excel e PDF são recursos avançados: `canAdvancedExport = isAdminRole(user.role) || meetsPlan(user.plan, 'pro')`. Sem permissão, os botões ficam desabilitados, exibem o ícone `Lock` e o tooltip \"disponível nos planos Pro e Invest\".",
+          "Botões \"Editar\" (`setReport(null)`, volta à edição mantendo cache) e \"Novo Relatório\" (`handleReset`, limpa estado e remove `last_report` do localStorage).",
+          "Resumo do Radar de Investimentos: exibe até 3 sinais de `SIGNALS` filtrados por `signal === 'COMPRA'`, com links para `/investments`.",
+          "Isolamento por conta: um `useEffect` reage a `user?.id` e recarrega/limpa o relatório a partir de `localStorage` ao trocar de usuário (o cache `last_report` é limpo pelo `AuthContext` em login/logout)."
+        ]
+      },
+      {
+        "heading": "History — histórico de relatórios (/history)",
+        "paragraphs": [
+          "Página protegida apenas por autenticação (`src/pages/History.tsx`). Carrega a lista de relatórios do usuário via `GET /api/reports` (com cabeçalhos `Content-Type` e `Authorization: Bearer <token>`), populando `reports` (array de `ReportSummary`: `id`, `totalAmount`, `highestCategory`, `itemCount`, `monthReference`, `createdAt`) e `historyMonths` (limite de meses do plano).",
+          "Quando `historyMonths` é um número (não `ilimitado`), exibe um aviso \"Seu plano exibe o histórico dos últimos N meses\" com link para `/plans`. A busca local filtra por `monthReference` ou `highestCategory`. Cada item é um cartão clicável que abre o detalhe via `GET /api/reports/{id}` em um modal (`ReportDetailModal`), reaproveitando `ExpenseCharts`, `ExpenseTable` e `InsightCards`.",
+          "A exclusão (`deleteReport`) usa `window.confirm` e chama `DELETE /api/reports/{id}`, removendo o item da lista em caso de sucesso. Datas são formatadas em pt-BR com `toLocaleDateString`. Estados vazios distinguem \"Nenhum relatório ainda\" (com CTA para o Dashboard) de \"Nada encontrado\" (resultado de busca)."
+        ]
+      },
+      {
+        "heading": "Login e Register — autenticação (/login, /register)",
+        "paragraphs": [
+          "Ambas as páginas (`src/pages/Login.tsx` e `src/pages/Register.tsx`) compartilham o mesmo padrão visual (cartão centralizado com efeito glass) e usam o hook `useAuth`. Cada uma lê `location.state.redirectTo` (padrão `/dashboard`) para redirecionar após o sucesso — por exemplo, se o usuário veio da tela de planos, retorna ao fluxo de pagamento. O Login adapta o subtítulo quando `redirectTo` começa com `/payment` (\"Entre para concluir a assinatura do seu plano\").",
+          "O Login coleta e-mail e senha e chama `login(email, password)`; o Register coleta nome, e-mail e senha (com `minLength={6}` no campo de senha) e chama `register(name, email, password)`. Erros são exibidos em um banner vermelho e o botão de submit mostra um spinner (`Loader2`) enquanto `submitting`. Ambas oferecem login social via `GoogleSignInButton` (callbacks `onSuccess`/`onError`) e links cruzados que propagam `redirectTo` em `state`."
+        ]
+      },
+      {
+        "heading": "Admin — painel administrativo (/admin)",
+        "paragraphs": [
+          "Painel de gestão de contas (`src/pages/Admin.tsx`). A própria página faz a guarda: um `useEffect` redireciona para `/` se não houver usuário ou se `isAdminRole(user.role)` for falso; enquanto `loading`, exibe um spinner. Carrega a lista de usuários via `GET /api/admin/users` (`AdminUser`: `id`, `name`, `email`, `plan`, `role`, `banned`, `authProvider`, `createdAt`).",
+          "Exibe KPIs de resumo (Usuários, Administradores, Banidos, Ativos), busca por nome/e-mail e, para cada usuário, campos editáveis de nome, e-mail, plano (`free`, `standard`, `pro`, `invest`) e papel (`user`, `admin`). Salvar dispara `PATCH /api/admin/users/{id}` com `{ name, email, plan, role, banned }`; excluir dispara `DELETE /api/admin/users/{id}` (com `window.confirm`). Banir/desbanir alterna o campo `banned` localmente antes de salvar.",
+          "As permissões por linha espelham as regras do backend: `canManageRow` (editar nome/e-mail/plano) vale para a própria conta, para super-admins ou para alvos não-administrativos; `canChangeRole` (conceder/remover admin) só para super-admin sobre alvos que não sejam super-admin nem a si próprio; `canBan` e `canDelete` excluem a si mesmo e contas super-admin. Linhas `superadmin` mostram o selo \"Principal\" (ícone `Crown`) e não podem ter o papel alterado. Após editar a própria conta, chama `refreshUser()` para sincronizar o contexto global (Navbar, guardas)."
+        ]
+      },
+      {
+        "heading": "Navbar — navegação e identidade (componente)",
+        "paragraphs": [
+          "`src/components/Navbar.tsx` é a barra superior fixa (`sticky top-0`) com efeito de blur. Monta dinamicamente os itens de menu conforme o estado de autenticação e o plano: Dashboard e Investimentos só aparecem quando `canUsePlatform` (`isAdminRole(user.role) || meetsPlan(user.plan, 'standard')`); Histórico aparece para qualquer conta logada; Planos é sempre visível; o link Admin só aparece para administradores.",
+          "Para usuários logados, exibe avatar, primeiro nome e o rótulo do plano (\"Gratuito\" quando `free`) e um botão Sair (`logout` + navegação para `/`). Para visitantes, exibe os links Entrar e Criar conta. Inclui o `ThemeToggle` e um menu mobile (hambúrguer com `Menu`/`X`) que fecha automaticamente ao mudar de rota (via `useEffect` sobre `location.pathname`). O item ativo é destacado comparando `location.pathname` com o `path` de cada item."
+        ]
+      },
+      {
+        "heading": "Componentes reutilizáveis de relatório",
+        "paragraphs": [
+          "Três componentes são compartilhados entre Dashboard e History (modal) para renderizar um relatório de gastos."
+        ],
+        "tables": [
+          {
+            "caption": "Componentes de apresentação de relatório",
+            "headers": [
+              "Componente",
+              "Arquivo",
+              "Função"
+            ],
+            "rows": [
+              [
+                "ExpenseTable",
+                "src/components/ExpenseTable.tsx",
+                "Tabela responsiva (Descrição, Categoria, Valor) sobre `ExpenseItem[]`; categoria exibida como badge e valor formatado por `formatCurrency`."
+              ],
+              [
+                "ExpenseCharts",
+                "src/components/ExpenseCharts.tsx",
+                "Dois gráficos Recharts sobre `CategoryTotal[]`: PieChart (donut, \"Distribuição por Categoria\") e BarChart horizontal (\"Comparativo de Valores\"); cores/tooltip adaptados ao tema via `useTheme`."
+              ],
+              [
+                "InsightCards",
+                "src/components/InsightCards.tsx",
+                "Dois cartões: \"Insights da IA\" (`insights: string[]`) e \"Recomendações\" (`recommendations: string[]`), com ícones lucide-react."
+              ]
+            ]
+          }
+        ],
+        "bullets": [
+          "`ExpenseCharts` usa a paleta `COLORS` (8 cores) ciclada por categoria e formata valores com `formatCurrency`; a barra horizontal usa preenchimento `#d97706`.",
+          "Todos seguem o estilo glass do projeto (`bg-white/50`, `backdrop-blur-xl`, bordas suaves) com variantes `dark:`."
+        ]
+      },
+      {
+        "heading": "Tema claro/escuro (ThemeProvider e ThemeToggle)",
+        "paragraphs": [
+          "`src/components/ThemeProvider.tsx` expõe um contexto com `theme` (`'light' | 'dark'`) e `toggleTheme`, consumido pelo hook `useTheme` (que lança erro se usado fora do provedor). O tema inicial é resolvido na ordem: valor salvo em `localStorage` sob a chave `theme`; senão, a preferência do sistema via `window.matchMedia('(prefers-color-scheme: dark)')`.",
+          "Um `useEffect` adiciona/remove a classe `dark` em `document.documentElement` e persiste o tema no `localStorage` a cada mudança; outro `useEffect` escuta mudanças da media query do sistema e só acompanha automaticamente quando não há preferência salva. O `ThemeToggle` (`src/components/ThemeToggle.tsx`) é um botão que chama `toggleTheme` e alterna os ícones `Sun`/`Moon` (lucide-react), com `aria-label=\"Alternar tema\"`."
+        ]
+      },
+      {
+        "heading": "Utilitários de exportação (CSV, Excel, PDF, Google Sheets)",
+        "paragraphs": [
+          "`src/lib/exportUtils.ts` concentra a exportação de um `ExpenseReport`, sem dependências externas. Os valores monetários são convertidos ao formato decimal brasileiro (vírgula) e as datas formatadas em pt-BR. Os nomes de arquivo seguem o padrão `gastoclaro-<monthReference em slug>.<ext>`."
+        ],
+        "tables": [
+          {
+            "caption": "Funções exportadas por src/lib/exportUtils.ts",
+            "headers": [
+              "Função",
+              "Saída / Comportamento"
+            ],
+            "rows": [
+              [
+                "generateCSV(report)",
+                "Gera string CSV com cabeçalhos Data, Descrição, Categoria, Valor (R$); escapa aspas e usa vírgula como separador decimal."
+              ],
+              [
+                "downloadCSV(report)",
+                "Baixa o CSV como Blob `text/csv;charset=utf-8` com BOM UTF-8 (0xEF,0xBB,0xBF) para acentuação correta em Excel/Sheets."
+              ],
+              [
+                "downloadExcel(report)",
+                "Gera um arquivo `.xls` a partir de tabela HTML (mimetype `application/vnd.ms-excel`) com linha de Total; sem bibliotecas externas."
+              ],
+              [
+                "exportPDF(report)",
+                "Abre nova janela (`window.open`) com HTML formatado (KPIs, tabela, Insights, Recomendações) e dispara `window.print()` para \"Salvar como PDF\"; alerta se pop-ups estiverem bloqueados."
+              ],
+              [
+                "copyToGoogleSheets(report)",
+                "Copia os dados em formato TSV para a área de transferência (`navigator.clipboard.writeText`) para colar diretamente no Google Sheets; retorna `Promise<boolean>`."
+              ]
+            ]
+          }
+        ],
+        "bullets": [
+          "Funções auxiliares internas: `escapeHtml` (sanitização para Excel/PDF), `reportSlug` (gera o slug do nome de arquivo) e `triggerDownload` (cria e aciona um `<a download>` temporário).",
+          "No Dashboard, `downloadExcel` e `exportPDF` só são chamados quando `canAdvancedExport` é verdadeiro (planos Pro/Invest ou admin)."
+        ]
+      }
+    ],
+    "icon": "layout"
+  },
+  {
+    "intro": "Esta seção documenta de forma exaustiva a API HTTP do backend do GastoClaro, servida por um servidor Express (arquivo server.ts) executado via tsx. Todas as rotas têm o prefixo /api. O corpo das requisições JSON é limitado a 25 MB (express.json({ limit: \"25mb\" })), exceto o webhook da Stripe, que recebe o corpo cru (express.raw) antes do parser JSON para validar a assinatura. As rotas estão agrupadas por área: Saúde, Autenticação, Uso/Cotas, Relatórios, IA, Mercado, Administração e Checkout/Pagamentos. Os roteadores de Autenticação, Administração, Relatórios, Uso e Checkout são montados por funções fábrica importadas de server/auth.ts.",
+    "section_title": "Referência da API (Backend)",
+    "subsections": [
+      {
+        "heading": "Visão geral e montagem das rotas",
+        "paragraphs": [
+          "O servidor é inicializado em startServer() no arquivo E:/Users/Joao/Desktop/GastoClaro/server.ts. A porta é definida por process.env.PORT (padrão 3000) e o servidor escuta em 0.0.0.0. Em produção (NODE_ENV === \"production\") o app confia no proxy (trust proxy = 1) para montar URLs HTTPS corretas e serve os arquivos estáticos de dist/; em desenvolvimento, usa o middleware do Vite em modo SPA.",
+          "Os roteadores são montados nos seguintes pontos de base: /api/auth (createAuthRouter), /api/admin (createAdminRouter), /api/reports (createReportsRouter), /api/usage (createUsageRouter) e /api/checkout (createCheckoutRouter). As rotas de IA, mercado e saúde são registradas diretamente em server.ts."
+        ],
+        "tables": [
+          {
+            "caption": "Pontos de montagem dos roteadores e definição direta de rotas (server.ts)",
+            "headers": [
+              "Prefixo / Rota",
+              "Origem",
+              "Função fábrica"
+            ],
+            "rows": [
+              [
+                "/api/health",
+                "Definida em server.ts",
+                "—"
+              ],
+              [
+                "/api/auth",
+                "server/auth.ts",
+                "createAuthRouter()"
+              ],
+              [
+                "/api/admin",
+                "server/auth.ts",
+                "createAdminRouter()"
+              ],
+              [
+                "/api/reports",
+                "server/auth.ts",
+                "createReportsRouter()"
+              ],
+              [
+                "/api/usage",
+                "server/auth.ts",
+                "createUsageRouter()"
+              ],
+              [
+                "/api/checkout",
+                "server/auth.ts",
+                "createCheckoutRouter()"
+              ],
+              [
+                "/api/checkout/webhook",
+                "Definida em server.ts (antes do express.json)",
+                "verifyStripeWebhook (server/payments.ts)"
+              ],
+              [
+                "/api/ai/*",
+                "Definidas em server.ts",
+                "—"
+              ],
+              [
+                "/api/market-data, /api/historical/:symbol, /api/asset-context/:symbol",
+                "Definidas em server.ts",
+                "—"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Middleware de proteção (requireAuth / requireAdmin / requirePlan)",
+        "paragraphs": [
+          "A proteção das rotas é centralizada em três middlewares definidos em E:/Users/Joao/Desktop/GastoClaro/server/auth.ts. A autenticação é baseada em token Bearer: o token é lido do cabeçalho Authorization no formato \"Bearer <token>\" (função getToken) e resolvido para um usuário via getUserByToken.",
+          "requireAuth(req, res, next): extrai o token e busca o usuário. Se não houver usuário válido, responde 401 com { error: \"Não autenticado. Faça login para continuar.\" }. Se o usuário estiver banido (user.banned), responde 403 com a mensagem \"Sua conta foi suspensa. Entre em contato com o suporte.\". Em caso de sucesso, anexa req.user e req.token e chama next().",
+          "requireAdmin(req, res, next): encadeia requireAuth e, em seguida, exige que req.user.role seja \"admin\" ou \"superadmin\". Caso contrário, responde 403 com { error: \"Acesso restrito a administradores.\" }. Todo o roteador /api/admin aplica router.use(requireAdmin), protegendo todas as suas sub-rotas.",
+          "requirePlan(minPlan): fábrica que retorna um middleware. Encadeia requireAuth e libera o acesso se o usuário tiver papel administrativo (isAdminRole) OU se o plano do usuário atingir o mínimo exigido (meetsPlan, baseado em PLAN_RANK: free=0, standard=1, pro=2, invest=3). Caso contrário, responde 403 com { error: \"Seu plano atual não dá acesso a este recurso. Faça um upgrade para continuar.\" }. As três rotas de IA usam requirePlan(\"standard\").",
+          "Controle de cota (quotaStatus/consumeQuota): além do plano, certas rotas de IA verificam limites mensais por tipo (QuotaKind = \"report\" | \"ai_analysis\"). O período corrente é o mês no formato 'YYYY-MM'. Administradores e planos \"ilimitado\" não consomem cota. Quando a cota se esgota, a rota responde 429."
+        ],
+        "tables": [
+          {
+            "caption": "Limites de cota por plano (src/constants/plans.ts) aplicados por quotaStatus / requirePlan",
+            "headers": [
+              "Plano",
+              "Preço (R$/mês)",
+              "Relatórios/mês (report)",
+              "Análises IA/mês (ai_analysis)",
+              "Histórico (meses)"
+            ],
+            "rows": [
+              [
+                "free (padrão, sem assinatura)",
+                "—",
+                "0 (bloqueado por requirePlan)",
+                "0 (bloqueado por requirePlan)",
+                "3 (piso)"
+              ],
+              [
+                "standard",
+                "60",
+                "30",
+                "50",
+                "3"
+              ],
+              [
+                "pro",
+                "100",
+                "100",
+                "200",
+                "12"
+              ],
+              [
+                "invest",
+                "150",
+                "ilimitado",
+                "ilimitado",
+                "ilimitado"
+              ],
+              [
+                "admin / superadmin",
+                "—",
+                "ilimitado",
+                "ilimitado",
+                "ilimitado"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Saúde",
+        "tables": [
+          {
+            "caption": "Endpoint de saúde",
+            "headers": [
+              "Método",
+              "Caminho",
+              "Auth/Papel",
+              "Descrição",
+              "Corpo/Parâmetros",
+              "Respostas / Status"
+            ],
+            "rows": [
+              [
+                "GET",
+                "/api/health",
+                "Público",
+                "Verificação de disponibilidade do servidor.",
+                "—",
+                "200 { status: \"ok\", timestamp: <ISO> }"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Autenticação (/api/auth)",
+        "paragraphs": [
+          "Roteador criado por createAuthRouter(). O login/cadastro local usa SQLite; o login Google valida o id_token via endpoint tokeninfo do Google (verifyGoogleIdToken), conferindo o aud contra GOOGLE_CLIENT_ID e exigindo e-mail verificado. As respostas de sucesso de register/login/google retornam { token, user } onde user é a versão pública (publicUser): id, name, email, plan, role, banned, authProvider, createdAt."
+        ],
+        "tables": [
+          {
+            "caption": "Endpoints de autenticação",
+            "headers": [
+              "Método",
+              "Caminho",
+              "Auth/Papel",
+              "Descrição",
+              "Corpo/Parâmetros",
+              "Respostas / Status"
+            ],
+            "rows": [
+              [
+                "GET",
+                "/api/auth/config",
+                "Público",
+                "Flags públicas para o frontend.",
+                "—",
+                "200 { googleClientId, stripeEnabled }"
+              ],
+              [
+                "POST",
+                "/api/auth/register",
+                "Público",
+                "Cadastro com nome, e-mail e senha; cria sessão.",
+                "{ name (>=2 chars), email (válido), password (>=6 chars) }",
+                "201 { token, user }; 400 nome/e-mail/senha inválidos; 409 \"Já existe uma conta com este e-mail.\""
+              ],
+              [
+                "POST",
+                "/api/auth/login",
+                "Público",
+                "Login local por e-mail e senha; cria sessão.",
+                "{ email, password }",
+                "200 { token, user }; 400 faltando e-mail/senha; 401 \"E-mail ou senha incorretos.\"; 403 conta banida"
+              ],
+              [
+                "POST",
+                "/api/auth/google",
+                "Público",
+                "Login/cadastro via Google Sign-In (id_token).",
+                "{ credential: <id_token Google> }",
+                "200 { token, user }; 400 credencial ausente; 401 inválido/expirado ou e-mail não verificado; 403 banido; 409 conta admin não vinculada (\"Faça login com e-mail e senha.\"); 502 falha ao validar; 503 Google não configurado no servidor"
+              ],
+              [
+                "GET",
+                "/api/auth/me",
+                "requireAuth",
+                "Retorna o usuário autenticado.",
+                "Header Authorization: Bearer <token>",
+                "200 { user }; 401 não autenticado; 403 banido"
+              ],
+              [
+                "POST",
+                "/api/auth/logout",
+                "Público (usa token se houver)",
+                "Encerra a sessão associada ao token, se presente.",
+                "Header Authorization: Bearer <token> (opcional)",
+                "200 { ok: true }"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Uso / Cotas (/api/usage)",
+        "tables": [
+          {
+            "caption": "Endpoint de uso",
+            "headers": [
+              "Método",
+              "Caminho",
+              "Auth/Papel",
+              "Descrição",
+              "Corpo/Parâmetros",
+              "Respostas / Status"
+            ],
+            "rows": [
+              [
+                "GET",
+                "/api/usage/",
+                "requireAuth",
+                "Resumo de uso do mês corrente (usageSummary): período, plano, relatórios usados/limite, análises IA usadas/limite e meses de histórico.",
+                "Header Authorization: Bearer <token>",
+                "200 { period, plan, reports: { used, limit }, aiAnalyses: { used, limit }, historyMonths }; 401; 403 banido"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Relatórios (/api/reports)",
+        "paragraphs": [
+          "Roteador criado por createReportsRouter(). Todas as rotas exigem requireAuth e operam apenas sobre os relatórios do próprio usuário. A listagem respeita a janela de histórico do plano (historyMonthsFor): relatórios mais antigos que o limite de meses são filtrados (admins têm histórico ilimitado)."
+        ],
+        "tables": [
+          {
+            "caption": "Endpoints de histórico de relatórios",
+            "headers": [
+              "Método",
+              "Caminho",
+              "Auth/Papel",
+              "Descrição",
+              "Corpo/Parâmetros",
+              "Respostas / Status"
+            ],
+            "rows": [
+              [
+                "POST",
+                "/api/reports/",
+                "requireAuth",
+                "Salva um relatório no histórico do usuário.",
+                "Corpo aceita { report: {...} } ou o próprio objeto do relatório",
+                "201 { id, createdAt }; 400 \"Relatório inválido.\" (corpo não-objeto ou array); 401; 403 banido"
+              ],
+              [
+                "GET",
+                "/api/reports/",
+                "requireAuth",
+                "Lista o histórico do usuário dentro da janela do plano.",
+                "Header Authorization: Bearer <token>",
+                "200 { reports: [{ id, totalAmount, highestCategory, itemCount, monthReference, createdAt }], historyMonths }; 401; 403"
+              ],
+              [
+                "GET",
+                "/api/reports/:id",
+                "requireAuth",
+                "Retorna o relatório completo (payload JSON) do próprio usuário.",
+                "Path: :id",
+                "200 { id, createdAt, report }; 404 \"Relatório não encontrado.\"; 401; 403"
+              ],
+              [
+                "DELETE",
+                "/api/reports/:id",
+                "requireAuth",
+                "Remove um relatório do histórico do usuário.",
+                "Path: :id",
+                "200 { ok: true }; 401; 403"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "IA (/api/ai)",
+        "paragraphs": [
+          "Rotas definidas diretamente em server.ts. Todas exigem requirePlan(\"standard\"). Duas delas (process-expenses e analyze-asset) também verificam e consomem cota mensal via quotaStatus/consumeQuota; a geração de sinais em lote não consome cota."
+        ],
+        "tables": [
+          {
+            "caption": "Endpoints de IA",
+            "headers": [
+              "Método",
+              "Caminho",
+              "Auth/Papel",
+              "Descrição",
+              "Corpo/Parâmetros",
+              "Respostas / Status"
+            ],
+            "rows": [
+              [
+                "POST",
+                "/api/ai/process-expenses",
+                "requirePlan(\"standard\") + cota \"report\"",
+                "Processa gastos (texto e/ou imagens) via Claude e retorna o relatório; consome 1 unidade de cota \"report\" em caso de sucesso.",
+                "{ text?: string, imagesData?: any[] }",
+                "200 <relatório>; 400 \"Payload inválido para processar gastos.\"; 429 limite mensal de relatórios atingido (cita o limite do plano); 403 plano insuficiente; 401; 500 falha ao processar"
+              ],
+              [
+                "POST",
+                "/api/ai/generate-batch-signals",
+                "requirePlan(\"standard\")",
+                "Gera sinais de investimento em lote a partir de dados de mercado (não consome cota).",
+                "{ marketData?: any[] }",
+                "200 <resultados>; 400 \"Payload inválido para gerar sinais.\"; 403 plano insuficiente; 401; 500 falha ao gerar"
+              ],
+              [
+                "POST",
+                "/api/ai/analyze-asset",
+                "requirePlan(\"standard\") + cota \"ai_analysis\"",
+                "Análise profunda de um ativo via Claude; consome 1 unidade de cota \"ai_analysis\" em caso de sucesso.",
+                "{ symbol: string (obrigatório, não vazio), contextData?: object }",
+                "200 { analysis }; 400 \"Payload inválido para analisar ativo.\"; 429 limite mensal de análises IA atingido (cita o limite do plano); 403 plano insuficiente; 401; 500 falha ao analisar"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Mercado (públicas)",
+        "paragraphs": [
+          "Rotas definidas em server.ts que consomem o Yahoo Finance (yahoo-finance2) e agregam notícias via server/news.ts. São públicas (sem autenticação). O conjunto fixo de símbolos cobre mercado brasileiro (ex.: ^BVSP, USDBRL=X, BTC-USD, PETR4.SA, VALE3.SA, ITUB4.SA, BBDC4.SA, MGLU3.SA, WEGE3.SA, ABEV3.SA, B3SA3.SA, ELET3.SA, RENT3.SA, BBAS3.SA, SUZB3.SA, RADL3.SA) e americano (^GSPC, ^IXIC, ^DJI, AAPL, MSFT, NVDA, GOOGL, AMZN, TSLA, META)."
+        ],
+        "tables": [
+          {
+            "caption": "Endpoints de mercado",
+            "headers": [
+              "Método",
+              "Caminho",
+              "Auth/Papel",
+              "Descrição",
+              "Corpo/Parâmetros",
+              "Respostas / Status"
+            ],
+            "rows": [
+              [
+                "GET",
+                "/api/market-data",
+                "Público",
+                "Cotações dos símbolos fixos (BR + US) com até 5 notícias por símbolo (fetchAssetNews).",
+                "—",
+                "200 [{ symbol, name, price, change, currency, region, news }]; 500 { error: \"Failed to fetch market data\", details }"
+              ],
+              [
+                "GET",
+                "/api/historical/:symbol",
+                "Público",
+                "Série histórica dos últimos 90 dias (yahooFinance.chart).",
+                "Path: :symbol",
+                "200 [ ...quotes ]; 500 { error: \"Failed to fetch historical data\" }"
+              ],
+              [
+                "GET",
+                "/api/asset-context/:symbol",
+                "Público",
+                "Contexto completo do ativo: quote, quoteSummary (summaryDetail, defaultKeyStatistics, financialData, assetProfile), até 12 notícias e resumo de cobertura (summarizeNewsCoverage).",
+                "Path: :symbol",
+                "200 { symbol, quote, summary, news, newsSummary }; 500 { error: \"Failed to fetch asset context\" }"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Administração (/api/admin)",
+        "paragraphs": [
+          "Roteador criado por createAdminRouter() com router.use(requireAdmin) — todas as rotas exigem papel \"admin\" ou \"superadmin\". As operações impõem regras de hierarquia: a conta principal (superadmin) só pode ser editada por ela mesma e não pode ser excluída; administradores comuns não gerenciam outros administradores (somente o superadmin); e há uma trava que impede deixar o sistema sem nenhum administrador ativo (countActiveAdmins)."
+        ],
+        "tables": [
+          {
+            "caption": "Endpoints administrativos",
+            "headers": [
+              "Método",
+              "Caminho",
+              "Auth/Papel",
+              "Descrição",
+              "Corpo/Parâmetros",
+              "Respostas / Status"
+            ],
+            "rows": [
+              [
+                "GET",
+                "/api/admin/users",
+                "requireAdmin",
+                "Lista todos os usuários (versão pública).",
+                "—",
+                "200 { users: [...] }; 401; 403 não-admin"
+              ],
+              [
+                "PATCH",
+                "/api/admin/users/:id",
+                "requireAdmin",
+                "Edita nome, e-mail, plano, papel e/ou banimento de um usuário, respeitando a hierarquia.",
+                "Path: :id; Corpo: { name?, email?, plan? (free|standard|pro|invest), role? (user|admin), banned? }",
+                "200 { user }; 400 campo inválido / auto-banimento / auto-papel / deixaria zero admins; 403 hierarquia (superadmin protegido, alteração de papel/banimento restrita ao superadmin); 404 \"Usuário não encontrado.\"; 409 e-mail duplicado; 401"
+              ],
+              [
+                "DELETE",
+                "/api/admin/users/:id",
+                "requireAdmin",
+                "Remove um usuário, respeitando a hierarquia.",
+                "Path: :id",
+                "200 { ok: true }; 400 auto-exclusão / deixaria zero admins; 403 superadmin não excluível ou admin protegido; 404 \"Usuário não encontrado.\"; 401"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Checkout / Pagamentos (/api/checkout)",
+        "paragraphs": [
+          "Roteador criado por createCheckoutRouter(). A integração com a Stripe é feita diretamente via REST API (sem SDK), em server/payments.ts. Quando STRIPE_SECRET_KEY não está configurada (isStripeEnabled() === false), a criação de sessão retorna { enabled: false } para o frontend cair no fluxo simulado. O webhook é montado em server.ts (fora deste roteador), recebendo o corpo cru para validação de assinatura HMAC-SHA256.",
+          "A ativação do plano (fulfillStripeCheckout) é idempotente: registra o pagamento por external_id (índice UNIQUE) e atualiza o plano do usuário; é compartilhada entre o retorno do cliente (/confirm) e o webhook (fonte de verdade). A verificação do webhook (verifyStripeWebhook) checa a assinatura v1, aplica timingSafeEqual e rejeita eventos fora de uma janela de tolerância de 5 minutos (300s) contra replay."
+        ],
+        "tables": [
+          {
+            "caption": "Endpoints de checkout e pagamentos",
+            "headers": [
+              "Método",
+              "Caminho",
+              "Auth/Papel",
+              "Descrição",
+              "Corpo/Parâmetros",
+              "Respostas / Status"
+            ],
+            "rows": [
+              [
+                "POST",
+                "/api/checkout/session",
+                "requireAuth",
+                "Cria uma sessão de pagamento na Stripe (cartão + Google Pay). Origem derivada de PUBLIC_BASE_URL, header Origin ou host.",
+                "{ plan: standard|pro|invest }",
+                "200 { enabled: false } se Stripe off; 200 { enabled: true, url, id } se on; 400 \"Plano inválido.\"; 401; 403 banido; 502 falha ao iniciar checkout"
+              ],
+              [
+                "POST",
+                "/api/checkout/confirm",
+                "requireAuth",
+                "Confirma a sessão Stripe (retrieveCheckoutSession) e ativa o plano de forma idempotente.",
+                "{ sessionId: string }",
+                "200 { ok: true, plan, amount, message }; 400 sessão inválida / plano não encontrado na sessão; 402 \"Pagamento ainda não confirmado.\"; 403 sessão não pertence à conta; 401; 502 falha ao confirmar"
+              ],
+              [
+                "POST",
+                "/api/checkout/",
+                "requireAuth",
+                "Pagamento simulado (fallback/demonstração) que valida dados de cartão e ativa o plano.",
+                "{ plan, cardNumber (13–19 dígitos), cardName (>=2), expiry (MM/AA), cvv (3–4 dígitos) }",
+                "200 { ok: true, paymentId, plan, amount, message }; 400 plano/cartão/nome/validade/CVV inválido; 401; 403 banido"
+              ],
+              [
+                "POST",
+                "/api/checkout/webhook",
+                "Público (validado por assinatura Stripe)",
+                "Recebe eventos da Stripe (corpo cru). Em checkout.session.completed ou async_payment_succeeded, ativa o plano (fulfillStripeCheckout).",
+                "Corpo cru (application/json) + header stripe-signature",
+                "200 { received: true }; 400 \"Assinatura de webhook inválida.\"; 500 \"Erro ao processar webhook.\""
+              ]
+            ]
+          }
+        ]
+      }
+    ],
+    "icon": "server"
+  },
+  {
+    "intro": "O GastoClaro persiste todos os dados em um banco SQLite local, acessado através do módulo nativo node:sqlite (DatabaseSync), sem qualquer dependência ou serviço externo. O arquivo físico fica em data/gastoclaro.db (caminho resolvido como path.resolve(process.cwd(), \"data\")), e o diretório data é criado automaticamente no boot via mkdirSync com a opção recursive. Toda a estrutura de tabelas, índices, migrações incrementais e o seed do administrador são executados de forma automática quando o módulo server/db.ts é importado na inicialização do servidor.",
+    "section_title": "Modelo de Dados (SQLite)",
+    "subsections": [
+      {
+        "heading": "Visao geral do mecanismo de persistencia",
+        "paragraphs": [
+          "O banco utiliza o motor SQLite embutido no proprio Node.js por meio da API node:sqlite (classe DatabaseSync), recurso disponivel em versoes recentes do Node (Node 22+/23+). A instancia e criada e exportada uma unica vez no modulo (export const db = new DatabaseSync(...)), de modo que toda a aplicacao compartilha a mesma conexao sincrona.",
+          "Na importacao do modulo, antes de qualquer operacao, e executado PRAGMA journal_mode = WAL, ativando o modo Write-Ahead Logging para melhor concorrencia entre leituras e escritas. Em seguida, todas as tabelas sao criadas com CREATE TABLE IF NOT EXISTS, o que torna o boot idempotente: um banco ja existente nao e recriado, e um banco novo recebe o esquema completo automaticamente.",
+          "As senhas locais sao armazenadas com scrypt e salt aleatorio. A funcao hashPassword gera 16 bytes aleatorios de salt (crypto.randomBytes) e calcula crypto.scryptSync(password, salt, 64), guardando o resultado no formato 'salt:hash' na coluna password_hash. A verificacao (verifyPassword) recomputa o hash e compara em tempo constante com crypto.timingSafeEqual, evitando ataques de temporizacao."
+        ],
+        "bullets": [
+          "Engine: SQLite nativo do Node (node:sqlite, classe DatabaseSync) — sem servico externo.",
+          "Arquivo: data/gastoclaro.db, com diretorio criado por mkdirSync(DATA_DIR, { recursive: true }).",
+          "Journal: PRAGMA journal_mode = WAL ativado no boot.",
+          "Criacao automatica: todas as tabelas via CREATE TABLE IF NOT EXISTS.",
+          "Identificadores: chaves primarias TEXT geradas com crypto.randomUUID() (usuarios, pagamentos, relatorios) ou crypto.randomBytes (tokens de sessao)."
+        ]
+      },
+      {
+        "heading": "Tabela users",
+        "paragraphs": [
+          "Armazena as contas de usuario, incluindo credenciais locais, plano, papel administrativo, estado de banimento e o vinculo opcional com autenticacao Google. O e-mail e sempre normalizado para minusculas e com espacos removidos antes da gravacao."
+        ],
+        "tables": [
+          {
+            "caption": "Esquema da tabela users",
+            "headers": [
+              "Coluna",
+              "Tipo",
+              "Restricoes / Padrao",
+              "Significado"
+            ],
+            "rows": [
+              [
+                "id",
+                "TEXT",
+                "PRIMARY KEY",
+                "Identificador unico do usuario (UUID gerado por crypto.randomUUID)."
+              ],
+              [
+                "name",
+                "TEXT",
+                "NOT NULL",
+                "Nome de exibicao do usuario."
+              ],
+              [
+                "email",
+                "TEXT",
+                "NOT NULL UNIQUE",
+                "E-mail de login, armazenado em minusculas e sem espacos."
+              ],
+              [
+                "password_hash",
+                "TEXT",
+                "NOT NULL DEFAULT ''",
+                "Hash scrypt no formato 'salt:hash'. Vazio para contas Google."
+              ],
+              [
+                "plan",
+                "TEXT",
+                "NOT NULL DEFAULT 'free'",
+                "Plano do usuario (ex.: free, invest)."
+              ],
+              [
+                "role",
+                "TEXT",
+                "NOT NULL DEFAULT 'user'",
+                "Papel: user, admin ou superadmin."
+              ],
+              [
+                "banned",
+                "INTEGER",
+                "NOT NULL DEFAULT 0",
+                "Flag de banimento (0 = ativo, 1 = banido)."
+              ],
+              [
+                "auth_provider",
+                "TEXT",
+                "NOT NULL DEFAULT 'local'",
+                "Origem da autenticacao: local ou google."
+              ],
+              [
+                "google_id",
+                "TEXT",
+                "NULL permitido",
+                "ID da conta Google vinculada; NULL quando nao ha vinculo."
+              ],
+              [
+                "created_at",
+                "TEXT",
+                "NOT NULL DEFAULT (datetime('now'))",
+                "Carimbo de criacao da conta (UTC)."
+              ]
+            ]
+          }
+        ],
+        "bullets": [
+          "Indice unico parcial idx_users_google_id sobre google_id WHERE google_id IS NOT NULL — garante que um mesmo google_id nao seja vinculado a duas contas, ignorando os NULLs.",
+          "Funcoes auxiliares: createUser, createGoogleUser, linkGoogleId, getUserByEmail, getUserById, getUserByGoogleId, updateUserPlan, updateUserFields, listUsers, deleteUser, countActiveAdmins.",
+          "countActiveAdmins conta papeis em ('admin', 'superadmin') com banned = 0, com opcao de excluir um id — usado para impedir remocao do ultimo administrador ativo."
+        ]
+      },
+      {
+        "heading": "Tabela sessions",
+        "paragraphs": [
+          "Mantem os tokens de sessao ativos. Cada token e gerado com crypto.randomBytes(32) (hex) e tem validade padrao de 30 dias (constante SESSION_DAYS = 30). Sessoes expiradas sao removidas de forma preguicosa: getUserByToken apaga o token e retorna undefined quando expires_at ja passou."
+        ],
+        "tables": [
+          {
+            "caption": "Esquema da tabela sessions",
+            "headers": [
+              "Coluna",
+              "Tipo",
+              "Restricoes / Padrao",
+              "Significado"
+            ],
+            "rows": [
+              [
+                "token",
+                "TEXT",
+                "PRIMARY KEY",
+                "Token de sessao (32 bytes aleatorios em hexadecimal)."
+              ],
+              [
+                "user_id",
+                "TEXT",
+                "NOT NULL, REFERENCES users(id) ON DELETE CASCADE",
+                "Usuario dono da sessao."
+              ],
+              [
+                "created_at",
+                "TEXT",
+                "NOT NULL DEFAULT (datetime('now'))",
+                "Data de criacao da sessao (UTC)."
+              ],
+              [
+                "expires_at",
+                "TEXT",
+                "NOT NULL",
+                "Data de expiracao em ISO 8601 (created + 30 dias)."
+              ]
+            ]
+          }
+        ],
+        "bullets": [
+          "Funcoes: createSession (insere token e expiracao), getUserByToken (valida expiracao e resolve o usuario), deleteSession (logout).",
+          "ON DELETE CASCADE: ao excluir um usuario, suas sessoes sao removidas automaticamente."
+        ]
+      },
+      {
+        "heading": "Tabela payments",
+        "paragraphs": [
+          "Registra os pagamentos de upgrade de plano. Suporta tanto pagamentos simulados quanto integracao real (ex.: Stripe), com idempotencia garantida por external_id para evitar ativar o mesmo pagamento duas vezes."
+        ],
+        "tables": [
+          {
+            "caption": "Esquema da tabela payments",
+            "headers": [
+              "Coluna",
+              "Tipo",
+              "Restricoes / Padrao",
+              "Significado"
+            ],
+            "rows": [
+              [
+                "id",
+                "TEXT",
+                "PRIMARY KEY",
+                "Identificador unico do pagamento (UUID)."
+              ],
+              [
+                "user_id",
+                "TEXT",
+                "NOT NULL, REFERENCES users(id) ON DELETE CASCADE",
+                "Usuario que efetuou o pagamento."
+              ],
+              [
+                "plan",
+                "TEXT",
+                "NOT NULL",
+                "Plano adquirido."
+              ],
+              [
+                "amount",
+                "REAL",
+                "NOT NULL",
+                "Valor pago."
+              ],
+              [
+                "card_last4",
+                "TEXT",
+                "NULL permitido",
+                "Ultimos 4 digitos do cartao (quando aplicavel)."
+              ],
+              [
+                "provider",
+                "TEXT",
+                "NOT NULL DEFAULT 'simulated'",
+                "Provedor do pagamento (ex.: simulated, stripe)."
+              ],
+              [
+                "external_id",
+                "TEXT",
+                "NULL permitido",
+                "ID externo do pagamento (ex.: sessao Stripe) para idempotencia."
+              ],
+              [
+                "status",
+                "TEXT",
+                "NOT NULL DEFAULT 'paid'",
+                "Estado do pagamento (ex.: paid)."
+              ],
+              [
+                "created_at",
+                "TEXT",
+                "NOT NULL DEFAULT (datetime('now'))",
+                "Carimbo de criacao do registro (UTC)."
+              ]
+            ]
+          }
+        ],
+        "bullets": [
+          "Indice unico parcial idx_payments_external_id sobre external_id WHERE external_id IS NOT NULL — assegura idempotencia, impedindo dois registros com o mesmo external_id.",
+          "Funcoes: createPayment (assinatura com provider 'simulated' e externalId null por padrao) e getPaymentByExternalId (consulta usada na confirmacao para evitar ativacao dupla)."
+        ]
+      },
+      {
+        "heading": "Tabela reports",
+        "paragraphs": [
+          "Guarda o historico de relatorios de gastos por usuario (exibido no Dashboard). O objeto completo do relatorio e serializado em JSON na coluna payload, enquanto alguns campos sao extraidos para colunas dedicadas, facilitando consultas e ordenacao."
+        ],
+        "tables": [
+          {
+            "caption": "Esquema da tabela reports",
+            "headers": [
+              "Coluna",
+              "Tipo",
+              "Restricoes / Padrao",
+              "Significado"
+            ],
+            "rows": [
+              [
+                "id",
+                "TEXT",
+                "PRIMARY KEY",
+                "Identificador unico do relatorio (UUID)."
+              ],
+              [
+                "user_id",
+                "TEXT",
+                "NOT NULL, REFERENCES users(id) ON DELETE CASCADE",
+                "Usuario dono do relatorio."
+              ],
+              [
+                "total_amount",
+                "REAL",
+                "NOT NULL DEFAULT 0",
+                "Total de gastos do relatorio (Number(report.total_amount) || 0)."
+              ],
+              [
+                "highest_category",
+                "TEXT",
+                "NULL permitido",
+                "Categoria de maior gasto (string ou NULL)."
+              ],
+              [
+                "item_count",
+                "INTEGER",
+                "NOT NULL DEFAULT 0",
+                "Quantidade de itens categorizados (length de categorized_items)."
+              ],
+              [
+                "month_reference",
+                "TEXT",
+                "NULL permitido",
+                "Mes de referencia do relatorio (report.monthReference)."
+              ],
+              [
+                "payload",
+                "TEXT",
+                "NOT NULL",
+                "Relatorio completo serializado em JSON (JSON.stringify)."
+              ],
+              [
+                "created_at",
+                "TEXT",
+                "NOT NULL DEFAULT (datetime('now'))",
+                "Carimbo de criacao (UTC)."
+              ]
+            ]
+          }
+        ],
+        "bullets": [
+          "Funcoes: createReport, listReportsByUser (ordenado por created_at DESC), getReportById (filtra por id e user_id), deleteReport (exige id e user_id).",
+          "O escopo por user_id nas consultas de leitura e exclusao garante que um usuario so acesse os proprios relatorios."
+        ]
+      },
+      {
+        "heading": "Tabela usage_counters",
+        "paragraphs": [
+          "Controla os contadores de uso mensal usados para aplicar os limites de plano. A chave primaria composta (user_id, period, kind) garante um unico contador por usuario, mes e tipo de operacao."
+        ],
+        "tables": [
+          {
+            "caption": "Esquema da tabela usage_counters",
+            "headers": [
+              "Coluna",
+              "Tipo",
+              "Restricoes / Padrao",
+              "Significado"
+            ],
+            "rows": [
+              [
+                "user_id",
+                "TEXT",
+                "NOT NULL, REFERENCES users(id) ON DELETE CASCADE",
+                "Usuario ao qual o contador pertence."
+              ],
+              [
+                "period",
+                "TEXT",
+                "NOT NULL",
+                "Periodo no formato 'YYYY-MM'."
+              ],
+              [
+                "kind",
+                "TEXT",
+                "NOT NULL",
+                "Tipo de uso: 'report' ou 'ai_analysis'."
+              ],
+              [
+                "count",
+                "INTEGER",
+                "NOT NULL DEFAULT 0",
+                "Contagem de usos no periodo."
+              ],
+              [
+                "(user_id, period, kind)",
+                "—",
+                "PRIMARY KEY (composta)",
+                "Identifica unicamente cada contador."
+              ]
+            ]
+          }
+        ],
+        "bullets": [
+          "incrementUsage usa upsert atomico: INSERT ... VALUES (..., 1) ON CONFLICT(user_id, period, kind) DO UPDATE SET count = count + 1.",
+          "getUsageCount retorna o count atual ou 0 quando nao ha registro para a combinacao consultada."
+        ],
+        "code_blocks": [
+          {
+            "caption": "Upsert atomico do contador de uso (incrementUsage)",
+            "lang": "sql",
+            "code": "INSERT INTO usage_counters (user_id, period, kind, count) VALUES (?, ?, ?, 1)\nON CONFLICT(user_id, period, kind) DO UPDATE SET count = count + 1"
+          }
+        ]
+      },
+      {
+        "heading": "Relacionamentos entre tabelas",
+        "paragraphs": [
+          "A tabela users e a entidade central. Todas as demais tabelas (sessions, payments, reports, usage_counters) referenciam users(id) por meio de chave estrangeira com ON DELETE CASCADE. Assim, ao excluir um usuario (deleteUser), o SQLite remove em cascata suas sessoes, pagamentos, relatorios e contadores de uso, mantendo a integridade referencial sem necessidade de limpeza manual."
+        ],
+        "bullets": [
+          "users 1—N sessions (sessions.user_id -> users.id, ON DELETE CASCADE).",
+          "users 1—N payments (payments.user_id -> users.id, ON DELETE CASCADE).",
+          "users 1—N reports (reports.user_id -> users.id, ON DELETE CASCADE).",
+          "users 1—N usage_counters (usage_counters.user_id -> users.id, ON DELETE CASCADE)."
+        ]
+      },
+      {
+        "heading": "Migracoes automaticas de colunas",
+        "paragraphs": [
+          "Para bancos ja existentes, o modulo executa migracoes incrementais idempotentes via a funcao ensureColumn. Ela inspeciona PRAGMA table_info(tabela) e, se a coluna ainda nao existir, executa ALTER TABLE ... ADD COLUMN com a definicao informada. Isso permite evoluir o esquema sem perder dados e sem precisar de um sistema de migracao externo: bancos novos ja nascem com o esquema completo (via CREATE TABLE), e bancos antigos sao atualizados coluna a coluna no boot.",
+          "As colunas atualmente garantidas por migracao sao: em users — role, banned, auth_provider e google_id; em payments — provider e external_id. Apos garantir as colunas, os indices unicos parciais sao (re)criados com CREATE UNIQUE INDEX IF NOT EXISTS."
+        ],
+        "code_blocks": [
+          {
+            "caption": "Mecanismo de migracao idempotente de colunas (ensureColumn)",
+            "lang": "typescript",
+            "code": "function ensureColumn(table: string, column: string, ddl: string): void {\n  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;\n  if (!cols.some((c) => c.name === column)) {\n    db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);\n  }\n}\n\nensureColumn(\"users\", \"role\", \"role TEXT NOT NULL DEFAULT 'user'\");\nensureColumn(\"users\", \"banned\", \"banned INTEGER NOT NULL DEFAULT 0\");\nensureColumn(\"users\", \"auth_provider\", \"auth_provider TEXT NOT NULL DEFAULT 'local'\");\nensureColumn(\"users\", \"google_id\", \"google_id TEXT\");\nensureColumn(\"payments\", \"provider\", \"provider TEXT NOT NULL DEFAULT 'simulated'\");\nensureColumn(\"payments\", \"external_id\", \"external_id TEXT\");"
+          }
+        ]
+      },
+      {
+        "heading": "Indices",
+        "paragraphs": [
+          "Alem das chaves primarias (que geram indices implicitos) e da restricao UNIQUE em users.email, o esquema define dois indices unicos parciais. Eles ignoram valores NULL (clausula WHERE ... IS NOT NULL), permitindo multiplas linhas sem o valor preenchido enquanto impedem duplicatas quando o valor existe."
+        ],
+        "tables": [
+          {
+            "caption": "Indices explicitos",
+            "headers": [
+              "Indice",
+              "Tabela / Coluna",
+              "Tipo",
+              "Proposito"
+            ],
+            "rows": [
+              [
+                "idx_users_google_id",
+                "users(google_id) WHERE google_id IS NOT NULL",
+                "UNIQUE parcial",
+                "Garante vinculo unico de conta Google."
+              ],
+              [
+                "idx_payments_external_id",
+                "payments(external_id) WHERE external_id IS NOT NULL",
+                "UNIQUE parcial",
+                "Idempotencia de pagamentos externos (ex.: confirmacao Stripe)."
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Logica de seed do administrador",
+        "paragraphs": [
+          "Ao final do carregamento do modulo, a funcao seedAdmin() e invocada para garantir a existencia de uma conta de super-administrador. O e-mail e a senha podem ser sobrescritos pelas variaveis de ambiente ADMIN_EMAIL e ADMIN_PASSWORD; caso ausentes, os valores padrao sao e-mail 'adm' e senha 'adm2070'.",
+          "Se ja existir um usuario com esse e-mail, o seed apenas promove a conta para role 'superadmin' (quando ainda nao for), respeitando deliberadamente um banimento manual feito pelo operador — ou seja, nao desbane a conta automaticamente a cada boot. Se a conta nao existir, ela e criada com plan 'invest', role 'superadmin' e senha armazenada via hashPassword."
+        ],
+        "bullets": [
+          "Variaveis de ambiente: ADMIN_EMAIL (padrao 'adm') e ADMIN_PASSWORD (padrao 'adm2070').",
+          "Conta semeada nasce com plan = 'invest' e role = 'superadmin'.",
+          "Comportamento idempotente: em boots subsequentes, apenas promove a role se necessario; nao reverte banimento manual."
+        ]
+      }
+    ],
+    "icon": "database"
+  },
+  {
+    "intro": "Esta seção descreve o sistema de autenticação, autorização e segurança do GastoClaro. O backend (Node/Express + tsx) é a fonte de verdade: armazena senhas com hash, emite e valida tokens de sessão de 30 dias e aplica a hierarquia de papéis e os limites de plano. O frontend (React 19) apenas guarda a navegação por conveniência de UX, replicando no cliente o que o servidor já garante. Há ainda um artefato legado/secundário de regras do Firestore, mantido como referência de modelo de dados.",
+    "section_title": "Autenticação, Autorização & Segurança",
+    "subsections": [
+      {
+        "heading": "Visão geral do modelo de segurança",
+        "paragraphs": [
+          "A autenticação é baseada em token opaco (Bearer) emitido pelo servidor no login/cadastro e persistido na tabela sessions do SQLite. O cliente guarda esse token em localStorage (chave gastoclaro_token) e o envia no cabeçalho Authorization: Bearer <token> em cada requisição protegida.",
+          "A regra de ouro do projeto é que o servidor é a fronteira de segurança. Os middlewares requireAuth, requireAdmin e requirePlan (em server/auth.ts) bloqueiam o acesso no backend; o componente ProtectedRoute e o AuthContext no frontend apenas melhoram a experiência (redirecionos, telas de loading), mas não constituem proteção real — chamar a API diretamente continua exigindo um token válido e os privilégios corretos."
+        ],
+        "bullets": [
+          "Arquivo do backend: E:/Users/Joao/Desktop/GastoClaro/server/auth.ts (rotas e middlewares de auth/admin).",
+          "Acesso ao banco e criptografia: E:/Users/Joao/Desktop/GastoClaro/server/db.ts (hash de senha, sessões, seed do admin).",
+          "Hierarquia de planos e papéis: E:/Users/Joao/Desktop/GastoClaro/src/constants/plans.ts (PLAN_RANK, meetsPlan, isAdminRole).",
+          "Estado de auth no cliente: E:/Users/Joao/Desktop/GastoClaro/src/context/AuthContext.tsx.",
+          "Guarda de rotas no cliente: E:/Users/Joao/Desktop/GastoClaro/src/components/ProtectedRoute.tsx.",
+          "Login Google no cliente: E:/Users/Joao/Desktop/GastoClaro/src/components/GoogleSignInButton.tsx.",
+          "Artefato legado: E:/Users/Joao/Desktop/GastoClaro/firestore.rules."
+        ]
+      },
+      {
+        "heading": "Hashing de senha (scrypt + salt)",
+        "paragraphs": [
+          "As senhas nunca são armazenadas em texto puro. A função hashPassword (server/db.ts) gera um salt aleatório de 16 bytes (32 caracteres hex) com crypto.randomBytes e deriva a chave com crypto.scryptSync(password, salt, 64), produzindo 64 bytes (128 caracteres hex). O valor guardado na coluna users.password_hash tem o formato salt:hash separado por dois-pontos.",
+          "A verificação (verifyPassword) divide o valor armazenado em salt e hash, recalcula o scrypt com o mesmo salt e compara com crypto.timingSafeEqual, evitando ataques de temporização (timing attacks). Se o registro não tiver salt e hash válidos, a verificação retorna false. Contas criadas via Google não têm senha local: password_hash fica como string vazia ('') e auth_provider = 'google'.",
+          "No cadastro, a senha precisa ter no mínimo 6 caracteres (validação em POST /api/auth/register). E-mails são normalizados para minúsculas e com trim antes de gravar (createUser)."
+        ],
+        "code_blocks": [
+          {
+            "caption": "server/db.ts — derivação e verificação de senha",
+            "lang": "ts",
+            "code": "export function hashPassword(password: string): string {\n  const salt = crypto.randomBytes(16).toString(\"hex\");\n  const hash = crypto.scryptSync(password, salt, 64).toString(\"hex\");\n  return `${salt}:${hash}`;\n}\n\nexport function verifyPassword(password: string, stored: string): boolean {\n  const [salt, hash] = stored.split(\":\");\n  if (!salt || !hash) return false;\n  const candidate = crypto.scryptSync(password, salt, 64).toString(\"hex\");\n  return crypto.timingSafeEqual(Buffer.from(candidate, \"hex\"), Buffer.from(hash, \"hex\"));\n}"
+          }
+        ]
+      },
+      {
+        "heading": "Tokens de sessão (validade de 30 dias, persistidos no banco)",
+        "paragraphs": [
+          "A sessão é criada por createSession (server/db.ts): gera um token aleatório de 32 bytes (64 caracteres hex) com crypto.randomBytes, calcula a data de expiração em SESSION_DAYS = 30 dias e insere uma linha na tabela sessions (colunas token, user_id, created_at, expires_at). O token é a chave primária da tabela e a coluna user_id referencia users(id) com ON DELETE CASCADE — ao excluir um usuário, suas sessões são removidas automaticamente.",
+          "Na validação, getUserByToken busca a sessão pelo token; se não existir, retorna indefinido. Se a sessão existir mas estiver expirada (expires_at no passado), ela é apagada (deleteSession) e o acesso é negado — ou seja, a expiração é auto-limpante no momento do uso. O logout (POST /api/auth/logout) também chama deleteSession para invalidar o token imediatamente no servidor.",
+          "No cliente, o token vive em localStorage sob a chave gastoclaro_token. Ao iniciar, o AuthContext tenta restaurar a sessão chamando GET /api/auth/me com o token salvo; se a chamada falhar (token inválido/expirado), o token é removido do localStorage e o usuário é deslogado."
+        ],
+        "code_blocks": [
+          {
+            "caption": "server/db.ts — criação e validação de sessão",
+            "lang": "ts",
+            "code": "const SESSION_DAYS = 30;\n\nexport function createSession(userId: string): string {\n  const token = crypto.randomBytes(32).toString(\"hex\");\n  const expires = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000).toISOString();\n  db.prepare(\"INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)\")\n    .run(token, userId, expires);\n  return token;\n}\n\nexport function getUserByToken(token: string): UserRow | undefined {\n  const row = db.prepare(\"SELECT user_id, expires_at FROM sessions WHERE token = ?\").get(token);\n  if (!row) return undefined;\n  if (new Date(row.expires_at).getTime() < Date.now()) {\n    deleteSession(token);\n    return undefined;\n  }\n  return getUserById(row.user_id);\n}"
+          }
+        ]
+      },
+      {
+        "heading": "Endpoints de autenticação e o fluxo de cada um",
+        "paragraphs": [
+          "Todas as rotas de autenticação ficam sob /api/auth (createAuthRouter). As rotas de leitura de identidade exigem token; as de cadastro/login são públicas. O middleware requireAuth lê o token via cabeçalho Bearer, recupera o usuário e bloqueia contas banidas antes de prosseguir."
+        ],
+        "tables": [
+          {
+            "caption": "Rotas de /api/auth",
+            "headers": [
+              "Método",
+              "Caminho",
+              "Auth",
+              "Corpo / Entrada",
+              "Sucesso",
+              "Erros relevantes"
+            ],
+            "rows": [
+              [
+                "GET",
+                "/api/auth/config",
+                "Pública",
+                "—",
+                "200 { googleClientId, stripeEnabled }",
+                "—"
+              ],
+              [
+                "POST",
+                "/api/auth/register",
+                "Pública",
+                "{ name, email, password }",
+                "201 { token, user }",
+                "400 (nome/e-mail/senha inválidos), 409 (e-mail já cadastrado)"
+              ],
+              [
+                "POST",
+                "/api/auth/login",
+                "Pública",
+                "{ email, password }",
+                "200 { token, user }",
+                "400 (faltam campos), 401 (credenciais incorretas), 403 (conta banida)"
+              ],
+              [
+                "POST",
+                "/api/auth/google",
+                "Pública",
+                "{ credential } (ID token do Google)",
+                "200 { token, user }",
+                "400 (credencial ausente), 401 (token inválido/e-mail não verificado), 403 (banido), 409 (conta admin sem vínculo), 502 (falha na validação), 503 (Google não configurado)"
+              ],
+              [
+                "GET",
+                "/api/auth/me",
+                "Bearer",
+                "—",
+                "200 { user }",
+                "401 (não autenticado), 403 (banido)"
+              ],
+              [
+                "POST",
+                "/api/auth/logout",
+                "Bearer (opcional)",
+                "—",
+                "200 { ok: true }",
+                "—"
+              ]
+            ]
+          }
+        ],
+        "bullets": [
+          "register: valida nome (>= 2 chars), e-mail (regex EMAIL_RE) e senha (>= 6 chars); rejeita e-mail já existente (409); cria o usuário, gera sessão e devolve token + usuário público.",
+          "login: valida tipos, busca por e-mail, confere a senha com verifyPassword, bloqueia banidos (403) e emite a sessão.",
+          "me: protegida por requireAuth; devolve a representação pública do usuário do token atual.",
+          "logout: apaga a sessão do servidor (deleteSession) e sempre responde { ok: true }, mesmo sem token.",
+          "O usuário retornado nas respostas é sempre a forma reduzida publicUser: id, name, email, plan, role, banned, authProvider, createdAt — o password_hash e o google_id nunca são expostos."
+        ]
+      },
+      {
+        "heading": "Login com Google (validação do ID token)",
+        "paragraphs": [
+          "O fluxo Google usa o Google Identity Services (GIS) no cliente. O componente GoogleSignInButton carrega dinamicamente o script https://accounts.google.com/gsi/client, inicializa com o client_id recebido de GET /api/auth/config e renderiza o botão oficial. Quando o usuário autentica, o GIS devolve um credential (ID token JWT) no callback, que é enviado ao backend via loginWithGoogle -> POST /api/auth/google. Se GOOGLE_CLIENT_ID não estiver configurado, o componente exibe um botão de fallback explicando como ativar o recurso.",
+          "No servidor, verifyGoogleIdToken valida o ID token chamando o endpoint público https://oauth2.googleapis.com/tokeninfo?id_token=... (sem dependências extras). A validação confere que o campo aud do token é igual a process.env.GOOGLE_CLIENT_ID, exige a presença de sub e email e marca emailVerified (aceitando 'true' string ou booleano). O login só prossegue com e-mail verificado.",
+          "Resolução de conta: o backend procura primeiro por google_id (getUserByGoogleId) e, se não achar, por e-mail (getUserByEmail). Se encontrar um usuário existente sem google_id, faz o vínculo (linkGoogleId). Caso não exista, cria uma conta Google nova (createGoogleUser, sem senha). Contas banidas são bloqueadas com 403."
+        ],
+        "bullets": [
+          "Endurecimento (hardening): se a conta existente tem role 'admin' e ainda não está vinculada ao Google, o login automático via Google é recusado com 409 — uma conta administrativa precisa entrar por e-mail e senha e vincular o Google estando autenticada.",
+          "Se GOOGLE_CLIENT_ID não está definido no servidor, POST /api/auth/google responde 503; falhas na chamada ao Google retornam 502; tokens inválidos/expirados retornam 401.",
+          "Integridade de vínculo: há um índice UNIQUE parcial idx_users_google_id em users(google_id) WHERE google_id IS NOT NULL, impedindo que duas contas compartilhem o mesmo google_id."
+        ]
+      },
+      {
+        "heading": "Hierarquia de papéis (roles) e permissões",
+        "paragraphs": [
+          "O sistema define três papéis na coluna users.role: user (padrão), admin e superadmin. O helper isAdminRole (src/constants/plans.ts) trata admin e superadmin como administrativos. Administradores ignoram exigências de plano e limites de uso (acesso ilimitado a relatórios, análises de IA e histórico).",
+          "O painel administrativo (/api/admin, createAdminRouter) é protegido em bloco por requireAdmin. As ações sobre usuários (editar, alterar papel, banir, excluir) aplicam regras de hierarquia: apenas o superadmin gerencia outros administradores e concede/remove o papel admin."
+        ],
+        "tables": [
+          {
+            "caption": "Papéis e capacidades",
+            "headers": [
+              "Papel",
+              "Acesso ao app",
+              "Painel admin (/api/admin/*)",
+              "Limites de plano/uso",
+              "Gerenciar outros admins",
+              "Conceder/remover papel admin"
+            ],
+            "rows": [
+              [
+                "user",
+                "Conforme o plano (free/standard/pro/invest)",
+                "Não (403)",
+                "Sujeito a cotas e janela de histórico",
+                "Não",
+                "Não"
+              ],
+              [
+                "admin",
+                "Total (ignora plano)",
+                "Sim",
+                "Ilimitado",
+                "Não (somente a si mesmo)",
+                "Não"
+              ],
+              [
+                "superadmin",
+                "Total (ignora plano)",
+                "Sim",
+                "Ilimitado",
+                "Sim",
+                "Sim"
+              ]
+            ]
+          },
+          {
+            "caption": "Regras aplicadas em PATCH /api/admin/users/:id e DELETE /api/admin/users/:id",
+            "headers": [
+              "Cenário",
+              "Resultado"
+            ],
+            "rows": [
+              [
+                "Editar a conta superadmin por outra conta",
+                "403 — 'A conta principal de administrador é protegida.'"
+              ],
+              [
+                "Admin comum tenta gerenciar outro admin/superadmin",
+                "403 — 'Apenas o administrador principal pode gerenciar outros administradores.'"
+              ],
+              [
+                "Não-superadmin tenta alterar role",
+                "403 — 'Apenas o administrador principal pode alterar papéis.'"
+              ],
+              [
+                "Alterar role do superadmin",
+                "403 — 'Não é possível alterar o papel do administrador principal.'"
+              ],
+              [
+                "Banir a si mesmo",
+                "400 — 'Você não pode banir a si mesmo.'"
+              ],
+              [
+                "Admin comum tenta banir outro admin",
+                "403 — 'Apenas o administrador principal pode banir outro administrador.'"
+              ],
+              [
+                "Excluir a si mesmo",
+                "400 — 'Você não pode excluir a si mesmo.'"
+              ],
+              [
+                "Excluir a conta superadmin",
+                "403 — 'A conta principal de administrador não pode ser excluída.'"
+              ],
+              [
+                "Remover último admin ativo (rebaixar/banir/excluir)",
+                "400 — 'Deve permanecer ao menos um administrador ativo.'"
+              ]
+            ]
+          }
+        ],
+        "bullets": [
+          "Em PATCH, o campo role só aceita 'user' ou 'admin' (não é possível promover ninguém a superadmin pela API); plan aceita free/standard/pro/invest; banned deve ser booleano.",
+          "A trava anti-lockout usa countActiveAdmins(excludeId), que conta administradores ativos (role admin/superadmin e banned = 0) excluindo o alvo — garantindo que o sistema nunca fique sem nenhum administrador ativo."
+        ]
+      },
+      {
+        "heading": "Conta de administrador semeada (seed) e proteções anti-bloqueio",
+        "paragraphs": [
+          "Na inicialização do banco, seedAdmin (server/db.ts) cria (ou promove) a conta administradora principal. As credenciais padrão são e-mail 'adm' e senha 'adm2070', mas podem ser sobrescritas pelas variáveis de ambiente ADMIN_EMAIL e ADMIN_PASSWORD. A conta é criada com plan = 'invest' e role = 'superadmin' (nível máximo).",
+          "O seed é idempotente: se a conta já existe, ela é apenas garantida como superadmin (caso não esteja). Importante: o seed respeita um banimento deliberado do operador — não desbane a conta automaticamente a cada boot. O e-mail legado pode permanecer como 'adm' (não precisa ser um e-mail completo); a edição via painel só revalida/aplica o e-mail quando ele realmente muda.",
+          "As proteções da conta principal são reforçadas no backend (createAdminRouter): a conta superadmin só pode ser editada por ela mesma, não pode ter o papel alterado e não pode ser excluída. Combinadas com a trava do mínimo de um administrador ativo, essas regras evitam o cenário de lockout em que ninguém mais conseguiria administrar o sistema."
+        ],
+        "tables": [
+          {
+            "caption": "Variáveis de ambiente relevantes para auth/segurança",
+            "headers": [
+              "Variável",
+              "Uso",
+              "Padrão"
+            ],
+            "rows": [
+              [
+                "ADMIN_EMAIL",
+                "E-mail da conta superadmin semeada",
+                "'adm'"
+              ],
+              [
+                "ADMIN_PASSWORD",
+                "Senha da conta superadmin semeada",
+                "'adm2070'"
+              ],
+              [
+                "GOOGLE_CLIENT_ID",
+                "Client ID usado para validar o aud do ID token e renderizar o botão GIS",
+                "(não definido) — login Google fica indisponível"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Aplicação no backend vs. guarda no frontend",
+        "paragraphs": [
+          "O backend impõe a segurança por meio de três middlewares em server/auth.ts. requireAuth extrai o token Bearer, valida a sessão, retorna 401 se não autenticado e 403 se a conta estiver banida (mensagem 'Sua conta foi suspensa. Entre em contato com o suporte.'). requireAdmin encadeia requireAuth e então exige role admin ou superadmin (403 caso contrário). requirePlan(minPlan) encadeia requireAuth e libera o acesso se o usuário for administrador (isAdminRole) ou se o plano atender ao mínimo (meetsPlan), retornando 403 quando o plano é insuficiente.",
+          "O frontend replica essa lógica apenas para UX. O ProtectedRoute usa o estado do AuthContext: enquanto loading exibe um spinner; se requireAuth e não houver usuário, redireciona para /login (guardando redirectTo no state); se um minPlan for exigido e o usuário não for admin nem atender ao plano, redireciona para /plans. Como a verificação ocorre no cliente, ela pode ser contornada — por isso a mesma checagem é feita no servidor (o comentário no código diz explicitamente que requirePlan 'garante no servidor o que a proteção de rota faz no cliente').",
+          "O AuthContext centraliza login, register, loginWithGoogle, logout e refreshUser, gerencia o token em localStorage e injeta o cabeçalho Authorization nas chamadas autenticadas. Ao autenticar, ele limpa o cache de Dashboard de sessões anteriores (chave last_report) para que uma conta não veja o relatório de outra no mesmo navegador."
+        ],
+        "tables": [
+          {
+            "caption": "Middlewares de autorização do backend (server/auth.ts)",
+            "headers": [
+              "Middleware",
+              "O que exige",
+              "Resposta em caso de falha"
+            ],
+            "rows": [
+              [
+                "requireAuth",
+                "Token Bearer válido e conta não banida",
+                "401 (não autenticado) / 403 (banida)"
+              ],
+              [
+                "requireAdmin",
+                "requireAuth + role admin ou superadmin",
+                "403 'Acesso restrito a administradores.'"
+              ],
+              [
+                "requirePlan(minPlan)",
+                "requireAuth + (admin OU plano >= minPlan)",
+                "403 'Seu plano atual não dá acesso a este recurso...'"
+              ]
+            ]
+          }
+        ],
+        "bullets": [
+          "Os limites de uso por plano (relatórios/mês e análises de IA/mês) são contabilizados no backend via quotaStatus/consumeQuota e a tabela usage_counters (chave user_id+period+kind, period no formato 'YYYY-MM'); administradores e planos ilimitados não consomem cota.",
+          "A janela de histórico (historyMonths) também é forçada no servidor em GET /api/reports, filtrando relatórios fora do período do plano; admins veem histórico ilimitado.",
+          "Recursos de relatórios são isolados por usuário: getReportById e deleteReport sempre filtram por id E user_id, impedindo acesso cruzado entre contas."
+        ]
+      },
+      {
+        "heading": "firestore.rules — artefato legado/secundário",
+        "paragraphs": [
+          "O arquivo firestore.rules é um artefato legado/secundário: a persistência real do GastoClaro usa SQLite (node:sqlite) no backend, não o Firestore. As regras permanecem no repositório como referência do modelo de dados e como camada de defesa caso um backend Firestore fosse usado, mas não participam do fluxo de autenticação descrito acima (que é todo baseado em token de sessão no SQLite).",
+          "Conceitualmente, as regras impõem isolamento por proprietário (owner): cada documento em users/{userId} e em users/{userId}/reports/{reportId} só pode ser lido/escrito pelo dono, validado por request.auth.uid == userId (helpers isOwner e isDocOwner). Há validação de campos obrigatórios e de formato (isValidUser, isValidReport, isValidEmail) e proteção de campos imutáveis (uid, email, createdAt em usuários; id, userId, createdAt em relatórios) via areImmutableFieldsUnchanged."
+        ],
+        "bullets": [
+          "users/{userId}: read/delete apenas pelo dono; create exige uid, email, createdAt e dados válidos; update preserva uid/email/createdAt imutáveis.",
+          "users/{userId}/reports/{reportId}: read/delete apenas pelo dono; create exige os campos do relatório e userId == request.auth.uid; update mantém id/userId/createdAt imutáveis.",
+          "Diferença em relação ao backend ativo: o Firestore não conhece os papéis user/admin/superadmin nem os limites de plano — todo o controle de papéis e cotas é exclusivo do backend Express/SQLite."
+        ]
+      }
+    ],
+    "icon": "shield"
+  },
+  {
+    "intro": "Esta seção descreve a camada de Inteligência Artificial do GastoClaro, que utiliza a API da Anthropic (Claude) para transformar textos e imagens de gastos em relatórios financeiros estruturados, além de oferecer geração de sinais de mercado e análise aprofundada de ativos. Toda a comunicação com a Anthropic ocorre no backend (server/anthropic.ts), enquanto o frontend (src/services/claude.ts) consome apenas os endpoints internos /api/ai/* da própria aplicação, sem expor a chave de API ao navegador.",
+    "section_title": "Inteligência Artificial (Anthropic Claude)",
+    "subsections": [
+      {
+        "heading": "Modelo e chamada à API",
+        "paragraphs": [
+          "O modelo utilizado é definido pela constante CLAUDE_MODEL = \"claude-opus-4-8\" (server/anthropic.ts). Todas as interações passam pela função única callClaude(messages, options), que monta a requisição e a envia para o endpoint oficial da Anthropic.",
+          "A requisição é um POST para https://api.anthropic.com/v1/messages com os cabeçalhos Content-Type: application/json, x-api-key (obtido de process.env.ANTHROPIC_API_KEY) e anthropic-version: 2023-06-01. O corpo envia model, max_tokens: 50000 e o array messages; quando options.systemPrompt é informado, ele é incluído no campo system.",
+          "A chave de API é lida pela função getAnthropicApiKey(), que lança o erro \"ANTHROPIC_API_KEY não configurada.\" caso a variável de ambiente ANTHROPIC_API_KEY não exista. A chave nunca é exposta ao frontend.",
+          "Ponto importante: o parâmetro temperature foi descontinuado no claude-opus-4-8. Embora a assinatura de callClaude ainda aceite options.temperature e alguns chamadores ainda o passem (ex.: 0.1, 0.2), o valor NUNCA é enviado à API — o corpo da requisição não inclui o campo temperature, evitando o retorno 400 invalid_request_error. Da resposta, é extraído apenas o primeiro bloco de conteúdo do tipo \"text\" (data.content[].type === \"text\"); se não houver, retorna string vazia."
+        ]
+      },
+      {
+        "heading": "Tratamento de erros e retentativas",
+        "paragraphs": [
+          "callClaude implementa retentativa automática com backoff exponencial para erros transitórios da Anthropic. O conjunto RETRYABLE_STATUS = {429, 500, 502, 503, 529} define os status reentráveis (529 = Overloaded, 429 = rate limit) e MAX_RETRIES = 4 limita o número de novas tentativas.",
+          "O atraso entre tentativas é calculado como Math.min(1000 * 2 ** attempt, 8000) + jitter aleatório de até 300 ms, ou seja, cresce exponencialmente (1s, 2s, 4s, 8s) com teto de 8 segundos, somado a uma pequena variação aleatória para evitar sincronização de chamadas. Cada retentativa registra um aviso no console.",
+          "Esgotadas as tentativas (ou em erro não reentrável), são lançadas mensagens amigáveis em português conforme o status, descritas na tabela abaixo."
+        ],
+        "tables": [
+          {
+            "caption": "Mapeamento de status HTTP para comportamento e mensagem ao usuário",
+            "headers": [
+              "Status HTTP",
+              "Reentrável?",
+              "Mensagem / comportamento final"
+            ],
+            "rows": [
+              [
+                "429",
+                "Sim",
+                "\"Muitas requisições à IA em pouco tempo. Aguarde um instante e tente de novo.\""
+              ],
+              [
+                "500 / 502 / 503 / 529",
+                "Sim",
+                "\"A IA está temporariamente sobrecarregada. Tente novamente em alguns segundos.\""
+              ],
+              [
+                "Demais status",
+                "Não",
+                "\"Erro na API Anthropic (<status>): <corpo do erro>\""
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Pipeline de processamento de gastos (processExpenses)",
+        "paragraphs": [
+          "A função exportada processExpenses(text, imagesData) é o núcleo do produto. Ela aceita um texto livre de gastos e/ou um conjunto de imagens (faturas, extratos ou comprovantes), envia tudo ao Claude e devolve um ExpenseReport completo e pronto para exibição.",
+          "O fluxo conceitual é: texto/imagens brutos -> itens categorizados -> totais por categoria e total geral -> insights -> recomendações. A IA recebe instrução para extrair valores monetários e descrições, categorizar cada item, somar por categoria, identificar a categoria de maior gasto, e gerar tanto insights quanto recomendações de economia. Quando há imagens, a IA é instruída a extrair todos os gastos visíveis, ignorar pagamentos de fatura (meras transferências) e consolidar texto e imagens em um único relatório.",
+          "As imagens são enviadas dentro do próprio prompt como JSON (base64 + mimeType), e o systemPrompt exige resposta APENAS em JSON válido, sem markdown, seguindo exatamente um schema declarado (responseSchema, strict: true).",
+          "A resposta textual do Claude é convertida para objeto pela função utilitária extractJson, que primeiro tenta JSON.parse direto e, em caso de falha, remove cercas de código markdown (```json / ```) antes de tentar novamente; persistindo a falha, retorna um fallback vazio seguro (listas vazias, total 0, highest_category \"outros\"). Em cima do resultado da IA, o backend acrescenta metadados gerados localmente: id (crypto.randomUUID()), createdAt e updatedAt (ISO), sourceText (o texto original) e monthReference (mês/ano em pt-BR via toLocaleString)."
+        ],
+        "code_blocks": [
+          {
+            "caption": "Schema JSON exigido na resposta (responseSchema.schema) — campos obrigatórios",
+            "lang": "json",
+            "code": "{\n  \"raw_items\": [\"string\"],\n  \"categorized_items\": [\n    { \"id\": \"string\", \"description\": \"string\", \"amount\": 0, \"category\": \"string\" }\n  ],\n  \"category_totals\": [ { \"category\": \"string\", \"amount\": 0 } ],\n  \"total_amount\": 0,\n  \"highest_category\": \"string\",\n  \"insights\": [\"string\"],\n  \"recommendations\": [\"string\"]\n}"
+          },
+          {
+            "caption": "Metadados adicionados pelo backend ao retorno da IA",
+            "lang": "ts",
+            "code": "return {\n  ...result,\n  id: crypto.randomUUID(),\n  createdAt: new Date().toISOString(),\n  updatedAt: new Date().toISOString(),\n  sourceText: text,\n  monthReference: new Date().toLocaleString(\"pt-BR\", { month: \"long\", year: \"numeric\" })\n};"
+          }
+        ]
+      },
+      {
+        "heading": "Categorias de despesa",
+        "paragraphs": [
+          "As categorias permitidas são fixas e idênticas em dois lugares: no prompt enviado ao Claude (server/anthropic.ts) e no tipo Category (src/types.ts). Quando a IA não tem certeza da categoria de um item, ela deve usar \"outros\"."
+        ],
+        "bullets": [
+          "alimentação",
+          "transporte",
+          "moradia",
+          "saúde",
+          "lazer",
+          "educação",
+          "compras",
+          "outros (categoria de fallback quando há incerteza)"
+        ]
+      },
+      {
+        "heading": "Modelo de dados (src/types.ts)",
+        "paragraphs": [
+          "Os tipos abaixo definem o contrato do relatório de gastos retornado pela IA e consumido pelo frontend. ExpenseReport combina os campos produzidos pelo Claude (raw_items, categorized_items, category_totals, total_amount, highest_category, insights, recommendations) com os metadados acrescentados pelo backend."
+        ],
+        "tables": [
+          {
+            "caption": "ExpenseItem — um gasto individual categorizado",
+            "headers": [
+              "Campo",
+              "Tipo",
+              "Significado"
+            ],
+            "rows": [
+              [
+                "id",
+                "string",
+                "Identificador do item gerado pela IA"
+              ],
+              [
+                "description",
+                "string",
+                "Descrição do gasto"
+              ],
+              [
+                "amount",
+                "number",
+                "Valor monetário do item"
+              ],
+              [
+                "category",
+                "string",
+                "Categoria atribuída (uma das categorias permitidas)"
+              ]
+            ]
+          },
+          {
+            "caption": "CategoryTotal — total agregado por categoria",
+            "headers": [
+              "Campo",
+              "Tipo",
+              "Significado"
+            ],
+            "rows": [
+              [
+                "category",
+                "string",
+                "Nome da categoria"
+              ],
+              [
+                "amount",
+                "number",
+                "Soma dos gastos daquela categoria"
+              ]
+            ]
+          },
+          {
+            "caption": "ExpenseReport — relatório consolidado",
+            "headers": [
+              "Campo",
+              "Tipo",
+              "Origem / Significado"
+            ],
+            "rows": [
+              [
+                "id",
+                "string",
+                "Backend: UUID gerado via crypto.randomUUID()"
+              ],
+              [
+                "userId",
+                "string (opcional)",
+                "Identificador do usuário dono do relatório"
+              ],
+              [
+                "createdAt",
+                "string",
+                "Backend: data/hora de criação (ISO)"
+              ],
+              [
+                "updatedAt",
+                "string",
+                "Backend: data/hora de atualização (ISO)"
+              ],
+              [
+                "sourceText",
+                "string",
+                "Backend: texto original informado pelo usuário"
+              ],
+              [
+                "raw_items",
+                "string[]",
+                "IA: itens brutos extraídos do texto original"
+              ],
+              [
+                "categorized_items",
+                "ExpenseItem[]",
+                "IA: itens com descrição, valor e categoria"
+              ],
+              [
+                "category_totals",
+                "CategoryTotal[]",
+                "IA: totais por categoria"
+              ],
+              [
+                "total_amount",
+                "number",
+                "IA: total geral de gastos"
+              ],
+              [
+                "highest_category",
+                "string",
+                "IA: categoria com maior gasto"
+              ],
+              [
+                "insights",
+                "string[]",
+                "IA: observações sobre os gastos"
+              ],
+              [
+                "recommendations",
+                "string[]",
+                "IA: recomendações para economizar"
+              ],
+              [
+                "monthReference",
+                "string",
+                "Backend: mês/ano de referência em pt-BR"
+              ]
+            ]
+          },
+          {
+            "caption": "Category — união de literais das categorias válidas",
+            "headers": [
+              "Valores permitidos"
+            ],
+            "rows": [
+              [
+                "'alimentação' | 'transporte' | 'moradia' | 'saúde' | 'lazer' | 'educação' | 'compras' | 'outros'"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Análise aprofundada de ativos (analyzeAsset) e sinais em lote (generateBatchSignals)",
+        "paragraphs": [
+          "Além do processamento de gastos, o módulo de IA oferece dois recursos voltados a investimentos. A função analyzeAsset(symbol, contextData) gera uma análise híbrida, profunda e profissional de um ativo (ações, ETFs, índices, bancos, seguradoras, empresas pagadoras de dividendos, renda fixa etc.).",
+          "O contextData é serializado em blocos nomeados dentro do prompt: ASSET_CONTEXT (contextData.quote), FUNDAMENTAL_DATA & VALUATION (contextData.summary), NEWS_COVERAGE (resumo de cobertura/fontes) e NEWS_CONTEXT (notícias curadas). As notícias passam pela função compactNewsForPrompt, que limita e normaliza cada item (title, source, summary, publishedAt, url) — até 12 notícias em analyzeAsset e até 5 por ativo em generateBatchSignals.",
+          "O systemInstruction estabelece uma estratégia de prompt extensa: o motor deve dar mais peso a fundamentos, valuation, macroeconomia/setor, governança e risco-retorno, tratando a análise técnica apenas como camada complementar de confirmação (timing, momentum, volatilidade); deve assumir hipótese semi-forte de eficiência de mercado, nunca simular informação privilegiada nem tratar rumor como fato, produzindo avaliação probabilística (cenários otimista, base e pessimista) e não certezas. Diferentemente do processamento de gastos, a resposta NÃO é em JSON — é texto em português, em formato Markdown premium pronto para exibição. Se a chamada falhar ou vier vazia, retorna \"Não foi possível gerar a análise.\"",
+          "A função generateBatchSignals(marketData) separa os ativos que possuem notícias dos que não possuem. Para os que têm notícias, envia um prompt pedindo, para cada ativo, um sinal (COMPRA, VENDA ou NEUTRO), uma força de tese de 0 a 100 (strength) e uma justificativa curta (rationale) baseada em notícias e macro, esperando um array JSON. Erros de chamada/parse são capturados e logados sem interromper o fluxo. Para os ativos sem notícias, é gerado um resultado padrão NEUTRO com strength 50 e rationale \"Analisando dados...\". Os dois conjuntos são concatenados no retorno."
+        ]
+      },
+      {
+        "heading": "Consumo pelo frontend (src/services/claude.ts)",
+        "paragraphs": [
+          "O serviço de frontend não fala diretamente com a Anthropic — ele chama os endpoints internos da aplicação via o helper postJson. Esse helper anexa automaticamente o token de sessão (lido de localStorage sob a chave gastoclaro_token) no cabeçalho Authorization: Bearer <token> quando presente, o que permite o controle de acesso por plano nos endpoints protegidos.",
+          "O postJson lê a resposta como texto e, em caso de status não-ok, tenta extrair a mensagem do campo error do corpo JSON, lançando um Error com essa mensagem (ou um genérico \"Erro <status> ao comunicar com o servidor.\"). Em sucesso, faz o parse do JSON de retorno.",
+          "As três funções do frontend espelham as do backend: processExpenses faz POST /api/ai/process-expenses com { text, imagesData } e devolve um ExpenseReport; generateBatchSignals faz POST /api/ai/generate-batch-signals com { marketData }; e analyzeAsset faz POST /api/ai/analyze-asset com { symbol, contextData }, extraindo response.analysis (com fallback \"Não foi possível gerar a análise.\")."
+        ],
+        "tables": [
+          {
+            "caption": "Endpoints internos de IA consumidos pelo frontend",
+            "headers": [
+              "Função (frontend)",
+              "Método e rota",
+              "Corpo enviado",
+              "Retorno"
+            ],
+            "rows": [
+              [
+                "processExpenses",
+                "POST /api/ai/process-expenses",
+                "{ text, imagesData }",
+                "ExpenseReport"
+              ],
+              [
+                "generateBatchSignals",
+                "POST /api/ai/generate-batch-signals",
+                "{ marketData }",
+                "any[] (sinais)"
+              ],
+              [
+                "analyzeAsset",
+                "POST /api/ai/analyze-asset",
+                "{ symbol, contextData }",
+                "{ analysis: string } → string"
+              ]
+            ]
+          }
+        ]
+      }
+    ],
+    "icon": "sparkles"
+  },
+  {
+    "section_title": "Planos, Limites & Pagamentos",
+    "intro": "O GastoClaro oferece três planos pagos mensais — Standard (R$ 60), Pro (R$ 100) e Invest (R$ 150) — definidos de forma centralizada em `src/constants/plans.ts` e usados tanto pela interface quanto pela camada de servidor. Cada plano determina cotas mensais de relatórios e de análises com IA, além da janela de histórico visível. O pagamento é feito via Stripe Checkout (cartão + Google Pay), com o webhook como fonte de verdade e um modo de checkout simulado quando a Stripe não está configurada. Esta seção descreve os planos, como os limites são aplicados no servidor e o fluxo completo de pagamento.",
+    "subsections": [
+      {
+        "heading": "Os três planos e seus limites",
+        "paragraphs": [
+          "Os planos são declarados no array `PLANS` em `src/constants/plans.ts`, cada um com a estrutura `PlanDef` (campos `id`, `name`, `price`, `tagline`, `highlight?`, `limits` e `features`). O bloco `limits` contém exatamente três cotas tipadas: `reportsPerMonth`, `aiAnalysesPerMonth` e `historyMonths` — cada uma podendo ser um número ou a string literal `\"ilimitado\"`.",
+          "O plano Pro é marcado com `highlight: true`, o que o exibe com o selo 'Mais popular' na página de planos. Os preços são em reais por mês (`price` em R$/mês). A função utilitária `formatBRL(value)` formata os valores no padrão pt-BR (R$)."
+        ],
+        "tables": [
+          {
+            "caption": "Comparativo de preços, cotas e recursos (fonte: src/constants/plans.ts)",
+            "headers": [
+              "Recurso / Limite",
+              "Standard",
+              "Pro",
+              "Invest"
+            ],
+            "rows": [
+              [
+                "id do plano",
+                "standard",
+                "pro",
+                "invest"
+              ],
+              [
+                "Preço (R$/mês)",
+                "R$ 60,00",
+                "R$ 100,00",
+                "R$ 150,00"
+              ],
+              [
+                "Relatórios de gastos por mês (reportsPerMonth)",
+                "30",
+                "100",
+                "ilimitado"
+              ],
+              [
+                "Análises com IA por mês (aiAnalysesPerMonth)",
+                "50",
+                "200",
+                "ilimitado"
+              ],
+              [
+                "Janela de histórico (historyMonths)",
+                "3 meses",
+                "12 meses",
+                "ilimitado"
+              ],
+              [
+                "Exportação",
+                "CSV",
+                "CSV, PDF e Excel",
+                "CSV, PDF e Excel (herda do Pro)"
+              ],
+              [
+                "Cotações de mercado em tempo real",
+                "Não",
+                "Sim",
+                "Sim"
+              ],
+              [
+                "Insights / recomendações avançadas",
+                "Não",
+                "Sim",
+                "Sim"
+              ],
+              [
+                "Sinais de investimento gerados por IA",
+                "Não",
+                "Não",
+                "Sim"
+              ],
+              [
+                "Análise profunda de ativos (ações, FIIs, cripto)",
+                "Não",
+                "Não",
+                "Sim"
+              ],
+              [
+                "Alertas personalizados de mercado",
+                "Não",
+                "Não",
+                "Sim"
+              ],
+              [
+                "Suporte",
+                "Por e-mail",
+                "Prioritário",
+                "24/7 dedicado"
+              ],
+              [
+                "Selo 'Mais popular' (highlight)",
+                "Não",
+                "Sim",
+                "Não"
+              ]
+            ]
+          }
+        ],
+        "bullets": [
+          "Standard (R$ 60): dashboard financeiro completo, categorização automática de gastos, histórico de 3 meses, exportação em CSV e suporte por e-mail.",
+          "Pro (R$ 100): 'Tudo do Standard' mais cotas maiores, histórico de 12 meses, cotações de mercado em tempo real, exportação em CSV, PDF e Excel, insights avançados e suporte prioritário.",
+          "Invest (R$ 150): 'Tudo do Pro' mais relatórios e análises com IA ilimitados, sinais de investimento por IA, análise profunda de ativos, alertas de mercado, histórico ilimitado e suporte 24/7.",
+          "As listas `features` são apenas textuais (exibidas nos cartões). As cotas que o servidor realmente aplica são somente as três do bloco `limits`."
+        ]
+      },
+      {
+        "heading": "Hierarquia de planos e controle de acesso",
+        "paragraphs": [
+          "Além das cotas, existe uma hierarquia de planos definida em `PLAN_RANK`: `free` = 0, `standard` = 1, `pro` = 2, `invest` = 3. O estado padrão de uma conta sem assinatura é `free`. A função `meetsPlan(userPlan, minPlan)` retorna verdadeiro quando o ranking do plano do usuário é maior ou igual ao mínimo exigido.",
+          "No servidor, o middleware `requirePlan(minPlan)` (em `server/auth.ts`) reforça esse controle: administradores (`isAdminRole`, papéis `admin`/`superadmin`) sempre passam; demais usuários precisam atender `meetsPlan`. Caso contrário, a resposta é HTTP 403 com a mensagem 'Seu plano atual não dá acesso a este recurso. Faça um upgrade para continuar.' As rotas de IA `/api/ai/process-expenses`, `/api/ai/generate-batch-signals` e `/api/ai/analyze-asset` exigem no mínimo o plano `standard`."
+        ]
+      },
+      {
+        "heading": "Aplicação dos limites no servidor (cotas mensais)",
+        "paragraphs": [
+          "As cotas mensais são aplicadas exclusivamente no backend, em `server/auth.ts`, e não confiam no cliente. O tipo `QuotaKind` cobre dois recursos: `\"report\"` e `\"ai_analysis\"`. O período corrente é o mês no formato `YYYY-MM` (`currentPeriod()`, derivado de `new Date().toISOString().slice(0, 7)`).",
+          "A função `planLimitFor(plan, kind)` lê o limite a partir de `getPlan(plan).limits` (mapeando `report` para `reportsPerMonth` e `ai_analysis` para `aiAnalysesPerMonth`). Um plano inexistente (`free`) retorna limite 0 — embora esses recursos já estejam bloqueados antes pelo `requirePlan`.",
+          "`quotaStatus(user, kind)` decide se a ação é permitida: administradores e planos com limite `\"ilimitado\"` sempre retornam `allowed: true`; nos demais casos compara o uso atual (`getUsageCount`) com o limite (`allowed: used < limit`). Após executar a ação com sucesso, `consumeQuota(user, kind)` incrementa o contador — exceto para admins e planos ilimitados.",
+          "Quando a cota se esgota, o endpoint retorna HTTP 429 com mensagens específicas: para relatórios, 'Você atingiu o limite de N relatórios do seu plano neste mês. Faça upgrade para criar mais.'; para análises de IA, 'Você atingiu o limite de N análises com IA do seu plano neste mês. Faça upgrade para analisar mais ativos.' A verificação de cota ocorre antes de chamar a IA, e o consumo só é registrado após o sucesso."
+        ],
+        "code_blocks": [
+          {
+            "caption": "server/auth.ts — verificação e consumo de cota (resumo)",
+            "lang": "ts",
+            "code": "export function quotaStatus(user, kind) {\n  if (isAdminRole(user.role)) return { allowed: true, used: 0, limit: \"ilimitado\" };\n  const limit = planLimitFor(user.plan, kind);\n  if (limit === \"ilimitado\") return { allowed: true, used: 0, limit };\n  const used = getUsageCount(user.id, currentPeriod(), kind);\n  return { allowed: used < limit, used, limit };\n}\n\nexport function consumeQuota(user, kind) {\n  if (isAdminRole(user.role)) return;\n  if (planLimitFor(user.plan, kind) === \"ilimitado\") return;\n  incrementUsage(user.id, currentPeriod(), kind);\n}"
+          },
+          {
+            "caption": "Tabela usage_counters (server/db.ts) — armazena o uso por mês e tipo",
+            "lang": "sql",
+            "code": "CREATE TABLE IF NOT EXISTS usage_counters (\n  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,\n  period  TEXT NOT NULL,   -- 'YYYY-MM'\n  kind    TEXT NOT NULL,   -- 'report' | 'ai_analysis'\n  count   INTEGER NOT NULL DEFAULT 0,\n  PRIMARY KEY (user_id, period, kind)\n);"
+          }
+        ],
+        "bullets": [
+          "`incrementUsage` usa `INSERT ... ON CONFLICT(user_id, period, kind) DO UPDATE SET count = count + 1`, garantindo contagem atômica por mês.",
+          "O endpoint `GET /api/usage` (router de `createUsageRouter`) retorna um resumo: `period`, `plan`, `reports {used, limit}`, `aiAnalyses {used, limit}` e `historyMonths`.",
+          "Janela de histórico: `historyMonthsFor(user)` retorna `\"ilimitado\"` para admins; senão usa `limits.historyMonths` do plano (piso de 3 meses para `free`). Em `GET /api/reports`, quando o valor é numérico, os relatórios são filtrados por uma data de corte (`cutoff = hoje - historyMonths`), retornando apenas os registros dentro da janela junto com `historyMonths`."
+        ]
+      },
+      {
+        "heading": "Fluxo de Stripe Checkout (cartão + Google Pay)",
+        "paragraphs": [
+          "A integração com a Stripe é feita diretamente pela REST API (`https://api.stripe.com/v1`), sem SDK, em `server/payments.ts`. A função `isStripeEnabled()` retorna verdadeiro apenas se a variável de ambiente `STRIPE_SECRET_KEY` estiver presente. O flag público `stripeEnabled` é exposto ao frontend via `GET /api/auth/config`.",
+          "O fluxo começa quando o usuário escolhe um plano em `Plans.tsx` (botão 'Assinar agora', que navega para `/payment?plan=<id>`; se não estiver logado, redireciona ao login com `redirectTo`). Na página `Payment.tsx`, com a Stripe ativa, o botão 'Pagar' chama `POST /api/checkout/session` enviando `{ plan: plan.id }` e o token Bearer.",
+          "No servidor (`createCheckoutRouter`), `POST /api/checkout/session` cria uma sessão via `createCheckoutSession`. Importante: o `mode` é `\"payment\"` (pagamento único), não `\"subscription\"` — apesar de a interface mencionar 'cobrança mensal recorrente'. A moeda é `brl` e o valor é `Math.round(plan.price * 100)` em centavos. São enviados `client_reference_id` (id do usuário), `customer_email`, `metadata[userId]`, `metadata[planId]`, `payment_method_types[0]=card` (o que já habilita carteiras como Google Pay e Apple Pay) e os `line_items` com `price_data` dinâmico (nome 'GastoClaro — Plano <name>').",
+          "As URLs de retorno apontam para `${origin}/payment/success?session_id={CHECKOUT_SESSION_ID}` (sucesso) e `${origin}/payment?plan=<id>&canceled=1` (cancelamento). A `origin` vem de `PUBLIC_BASE_URL`, do header `Origin`, ou de `${req.protocol}://${req.get('host')}`. A resposta do endpoint é `{ enabled: true, url, id }`; o frontend redireciona o navegador para `data.url`."
+        ],
+        "code_blocks": [
+          {
+            "caption": "server/payments.ts — criação da sessão de Checkout (modo payment)",
+            "lang": "ts",
+            "code": "form.set(\"mode\", \"payment\");\nform.set(\"success_url\", `${origin}/payment/success?session_id={CHECKOUT_SESSION_ID}`);\nform.set(\"cancel_url\", `${origin}/payment?plan=${plan.id}&canceled=1`);\nform.set(\"client_reference_id\", user.id);\nform.set(\"customer_email\", user.email);\nform.set(\"metadata[userId]\", user.id);\nform.set(\"metadata[planId]\", plan.id);\nform.set(\"payment_method_types[0]\", \"card\");\nform.set(\"line_items[0][price_data][currency]\", \"brl\");\nform.set(\"line_items[0][price_data][unit_amount]\", String(Math.round(plan.price * 100)));"
+          }
+        ],
+        "tables": [
+          {
+            "caption": "Endpoints de checkout (server/auth.ts → createCheckoutRouter, montado em /api/checkout)",
+            "headers": [
+              "Método e rota",
+              "Auth",
+              "Função",
+              "Respostas relevantes"
+            ],
+            "rows": [
+              [
+                "POST /api/checkout/session",
+                "requireAuth",
+                "Cria a sessão de Checkout da Stripe. Se a Stripe não está habilitada, devolve { enabled: false }.",
+                "200 { enabled: true, url, id } | 200 { enabled: false } | 400 'Plano inválido.' | 502 falha ao iniciar"
+              ],
+              [
+                "POST /api/checkout/confirm",
+                "requireAuth",
+                "Confirma a sessão no retorno do cliente e ativa o plano (idempotente).",
+                "200 { ok, plan, amount, message } | 400 'Sessão inválida.' | 402 'Pagamento ainda não confirmado.' | 403 sessão de outra conta | 502 falha"
+              ],
+              [
+                "POST /api/checkout",
+                "requireAuth",
+                "Checkout simulado (fallback/demonstração) que valida e ativa o plano sem cobrança real.",
+                "200 { ok, paymentId, plan, amount, message } | 400 plano/cartão/validade/CVV inválidos"
+              ],
+              [
+                "POST /api/checkout/webhook",
+                "Assinatura HMAC (sem requireAuth)",
+                "Webhook da Stripe — fonte de verdade do pagamento.",
+                "200 { received: true } | 400 'Assinatura de webhook inválida.' | 500 erro no handler"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Confirmação no retorno (/confirm) e idempotência",
+        "paragraphs": [
+          "Após o pagamento, a Stripe redireciona para `/payment/success?session_id=...`, tratada por `PaymentSuccess.tsx`. O componente chama `POST /api/checkout/confirm` com `{ sessionId }` uma única vez (protegido por `confirmedRef` para evitar dupla execução em re-render), exibindo os estados 'confirming', 'ok' ou 'error'.",
+          "No servidor, `POST /api/checkout/confirm` recupera a sessão via `retrieveCheckoutSession(sessionId)` e aplica três validações: o `payment_status` precisa ser `\"paid\"` (senão HTTP 402 'Pagamento ainda não confirmado.'); o `metadata.userId` precisa pertencer ao usuário autenticado (senão HTTP 403 'Esta sessão de pagamento não pertence à sua conta.'); e o `metadata.planId` precisa corresponder a um plano válido (senão HTTP 400). Em caso de sucesso, chama `fulfillStripeCheckout(session)` e responde `{ ok: true, plan, amount, message: 'Pagamento aprovado! Plano <name> ativado.' }`.",
+          "A ativação é idempotente por construção. `fulfillStripeCheckout` só prossegue se `payment_status === 'paid'`, lê `userId`/`planId` do `metadata` e, antes de gravar, verifica `getPaymentByExternalId(session.id)`. Se ainda não existe registro, chama `createPayment` com provider `\"stripe\"` e `external_id = session.id`; o índice `UNIQUE idx_payments_external_id` protege contra corridas (a exceção é silenciada). Em seguida sempre executa `updateUserPlan(userId, planId)`. Assim, mesmo que `/confirm` e o webhook processem a mesma sessão, o pagamento é gravado apenas uma vez."
+        ],
+        "code_blocks": [
+          {
+            "caption": "server/auth.ts — ativação idempotente do plano",
+            "lang": "ts",
+            "code": "export function fulfillStripeCheckout(session: any): boolean {\n  if (session?.payment_status !== \"paid\") return false;\n  const userId = session?.metadata?.userId;\n  const planDef = PLANS.find((p) => p.id === session?.metadata?.planId);\n  if (!userId || !planDef) return false;\n\n  const sessionId = session?.id;\n  if (sessionId && !getPaymentByExternalId(sessionId)) {\n    try {\n      createPayment(userId, planDef.id, planDef.price, null, \"stripe\", sessionId);\n    } catch { /* corrida com índice UNIQUE → já processado */ }\n  }\n  updateUserPlan(userId, planDef.id);\n  return true;\n}"
+          }
+        ]
+      },
+      {
+        "heading": "Webhook como fonte de verdade (validação HMAC-SHA256)",
+        "paragraphs": [
+          "O webhook `POST /api/checkout/webhook` é a fonte de verdade do pagamento: ele garante a ativação do plano mesmo que o cliente não retorne ao site. Ele é registrado em `server.ts` antes do `express.json`, usando `express.raw({ type: 'application/json' })`, porque a validação da assinatura precisa do corpo cru (não parseado).",
+          "A função `verifyStripeWebhook(rawBody, signatureHeader)` valida o header `Stripe-Signature` sem SDK. Ela extrai o timestamp (`t`) e a assinatura (`v1`), calcula um HMAC-SHA256 sobre a string `${t}.${payload}` usando o segredo `STRIPE_WEBHOOK_SECRET`, e compara em tempo constante com `crypto.timingSafeEqual`. Há ainda uma janela de tolerância de 5 minutos (300 segundos) contra replay; se o timestamp estiver fora dela, o evento é rejeitado. Assinatura inválida resulta em HTTP 400 'Assinatura de webhook inválida.'",
+          "Quando o evento é válido e do tipo `checkout.session.completed` (ou `checkout.session.async_payment_succeeded`), o handler chama `fulfillStripeCheckout(event.data.object)` — a mesma rotina idempotente usada pelo `/confirm`. A resposta de sucesso é `{ received: true }`; erros no processamento retornam HTTP 500. A presença do segredo do webhook é verificável por `isStripeWebhookConfigured()`."
+        ],
+        "code_blocks": [
+          {
+            "caption": "server/payments.ts — validação HMAC-SHA256 do webhook",
+            "lang": "ts",
+            "code": "const expected = crypto\n  .createHmac(\"sha256\", secret)\n  .update(`${timestamp}.${payload}`, \"utf8\")\n  .digest(\"hex\");\nconst expectedBuf = Buffer.from(expected, \"hex\");\nconst signatureBuf = Buffer.from(signature, \"hex\");\nif (expectedBuf.length !== signatureBuf.length ||\n    !crypto.timingSafeEqual(expectedBuf, signatureBuf)) {\n  return null;\n}\n// Janela de tolerância de 5 minutos contra replay.\nconst now = Math.floor(Date.now() / 1000);\nif (Math.abs(now - Number(timestamp)) > 300) return null;"
+          }
+        ]
+      },
+      {
+        "heading": "Modo de checkout simulado (fallback sem STRIPE_SECRET_KEY)",
+        "paragraphs": [
+          "Quando `STRIPE_SECRET_KEY` não está configurada, o app continua funcionando em modo simulado. Nesse caso, `POST /api/checkout/session` retorna `{ enabled: false }`, e o frontend (`Payment.tsx`) cai automaticamente no formulário de cartão simulado (estado `useSimulated`). A página exibe um aviso azul: 'Modo simulado ativo. Configure STRIPE_SECRET_KEY no servidor para habilitar o pagamento real (cartão + Google Pay).' Mesmo com a Stripe ativa, o usuário pode optar manualmente pelo modo simulado ('Prefiro usar o pagamento simulado (teste)').",
+          "O endpoint simulado é `POST /api/checkout` (rota raiz do router), que recebe `{ plan, cardNumber, cardName, expiry, cvv }`. Ele valida o plano e os dados do cartão no servidor: número com 13 a 19 dígitos, nome com pelo menos 2 caracteres, validade no formato `MM/AA` (regex `^\\d{2}\\/\\d{2}$`) e CVV de 3 ou 4 dígitos. Falhas retornam HTTP 400 com mensagens específicas (ex.: 'Número de cartão inválido.', 'Validade inválida (use MM/AA).', 'CVV inválido.').",
+          "Em caso de sucesso, grava o pagamento com `createPayment(userId, planId, price, ultimos4digitos, 'simulated')` (provider `\"simulated\"`, sem `external_id`), ativa o plano com `updateUserPlan` e responde `{ ok: true, paymentId, plan, amount, message: 'Pagamento aprovado! Plano <name> ativado.' }`. A interface então exibe a tela de sucesso e o frontend chama `refreshUser()`. Nenhum valor real é cobrado — a UI deixa isso explícito: 'Pagamento simulado — nenhum valor real será cobrado.'"
+        ],
+        "tables": [
+          {
+            "caption": "Registro de pagamentos (tabela payments, server/db.ts)",
+            "headers": [
+              "Coluna",
+              "Tipo / observação"
+            ],
+            "rows": [
+              [
+                "id",
+                "TEXT PRIMARY KEY (UUID)"
+              ],
+              [
+                "user_id",
+                "TEXT, FK para users(id) ON DELETE CASCADE"
+              ],
+              [
+                "plan",
+                "TEXT (id do plano: standard/pro/invest)"
+              ],
+              [
+                "amount",
+                "REAL (valor em R$)"
+              ],
+              [
+                "card_last4",
+                "TEXT (últimos 4 dígitos no modo simulado; null no Stripe)"
+              ],
+              [
+                "provider",
+                "TEXT DEFAULT 'simulated' ('stripe' ou 'simulated')"
+              ],
+              [
+                "external_id",
+                "TEXT (id da sessão Stripe; índice UNIQUE para idempotência)"
+              ],
+              [
+                "status",
+                "TEXT DEFAULT 'paid'"
+              ],
+              [
+                "created_at",
+                "TEXT DEFAULT datetime('now')"
+              ]
+            ]
+          }
+        ]
+      }
+    ],
+    "icon": "card"
+  },
+  {
+    "section_title": "Mercado Financeiro & Investimentos",
+    "intro": "O módulo de Mercado Financeiro do GastoClaro agrega cotações em tempo quase real dos mercados brasileiro e norte-americano (índices, ações, câmbio e cripto), enriquecidas com notícias coletadas de feeds RSS e do Yahoo Finance. Os dados são servidos pelo endpoint REST GET /api/market-data e consumidos por dois componentes do frontend: a página Investimentos.ai (src/pages/Investments.tsx), com seletor de região 🇧🇷/🇺🇸/🌎, e o ticker rolante da home (src/components/MarketTicker.tsx). As cotações ao vivo vêm da biblioteca yahoo-finance2 no servidor; uma lista estática em src/constants/investments.ts atua como fallback inicial e como base de exibição.",
+    "subsections": [
+      {
+        "heading": "Endpoint /api/market-data",
+        "paragraphs": [
+          "Definido em server.ts (linha 161), o endpoint GET /api/market-data percorre a união das listas BR_SYMBOLS e US_SYMBOLS e, para cada símbolo, faz uma chamada yahooFinance.quote(symbol) e busca notícias via fetchAssetNews (máximo de 5 itens por ativo). As chamadas são paralelizadas com Promise.all; símbolos que falham ou não retornam cotação viram null e são descartados pelo filtro final (results.filter(r => r !== null)).",
+          "É um endpoint público (não exige plano nem cota): diferente de /api/ai/* , ele não passa por requirePlan. Em sucesso responde 200 com um array JSON de objetos de ativo; em falha crítica responde 500 com { error: \"Failed to fetch market data\", details }. A moeda de cada ativo vem de quote.currency, com fallback para USD (mercado US) ou BRL (mercado BR), e a região é derivada por regionForSymbol (US se o símbolo estiver em US_SYMBOL_SET, senão BR)."
+        ],
+        "bullets": [
+          "Cotações ao vivo: yahoo-finance2 (instância única const yahooFinance = new YahooFinance() em server.ts).",
+          "Notícias: server/news.ts, combinando fast-xml-parser (feeds RSS de portais brasileiros) com yahooFinance.search.",
+          "BRAPI_TOKEN aparece em .env.example (\"Cotações alternativas (opcional)\") e é citado no README, mas não é efetivamente consumido pelo código atual — a fonte ativa de cotações é o yahoo-finance2."
+        ],
+        "code_blocks": [
+          {
+            "caption": "Geração do objeto de cada ativo em /api/market-data (server.ts)",
+            "lang": "ts",
+            "code": "const quote: any = await yahooFinance.quote(symbol);\nif (!quote) { return null; }\nconst news = await fetchAssetNews({ symbol, yahooFinance, shortName: quote.shortName, longName: quote.longName, maxItems: 5 });\nreturn {\n  symbol,\n  name: quote.shortName || quote.longName || symbol,\n  price: quote.regularMarketPrice ?? 0,\n  change: quote.regularMarketChangePercent ?? 0,\n  currency: quote.currency ?? (regionForSymbol(symbol) === \"US\" ? \"USD\" : \"BRL\"),\n  region: regionForSymbol(symbol),\n  news\n};"
+          }
+        ],
+        "tables": [
+          {
+            "caption": "Formato de cada item do array retornado por GET /api/market-data",
+            "headers": [
+              "Campo",
+              "Tipo",
+              "Origem / Observação"
+            ],
+            "rows": [
+              [
+                "symbol",
+                "string",
+                "Símbolo Yahoo (ex.: PETR4.SA, ^GSPC, AAPL, ^BVSP)"
+              ],
+              [
+                "name",
+                "string",
+                "quote.shortName || quote.longName || symbol"
+              ],
+              [
+                "price",
+                "number",
+                "quote.regularMarketPrice (0 se ausente)"
+              ],
+              [
+                "change",
+                "number",
+                "quote.regularMarketChangePercent — variação % (0 se ausente)"
+              ],
+              [
+                "currency",
+                "string",
+                "quote.currency, com fallback USD (US) ou BRL (BR)"
+              ],
+              [
+                "region",
+                "\"US\" | \"BR\"",
+                "Derivado por regionForSymbol(symbol)"
+              ],
+              [
+                "news",
+                "MarketNewsItem[]",
+                "Notícias do ativo (até maxItems=5 neste endpoint)"
+              ]
+            ]
+          },
+          {
+            "caption": "Endpoints relacionados de mercado (server.ts)",
+            "headers": [
+              "Método",
+              "Rota",
+              "Descrição",
+              "Respostas"
+            ],
+            "rows": [
+              [
+                "GET",
+                "/api/market-data",
+                "Cotações + notícias de BR e US",
+                "200 array; 500 erro"
+              ],
+              [
+                "GET",
+                "/api/historical/:symbol",
+                "Histórico de ~90 dias via yahooFinance.chart (result.quotes)",
+                "200 array; 500 erro"
+              ],
+              [
+                "GET",
+                "/api/asset-context/:symbol",
+                "Cotação + quoteSummary + notícias (maxItems=12) + newsSummary, para a Análise IA",
+                "200 objeto; 500 erro"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Ativos rastreados",
+        "paragraphs": [
+          "As listas de símbolos consultados ficam em server.ts: BR_SYMBOLS (mercado brasileiro mais câmbio e cripto) e US_SYMBOLS (índices e principais ações americanas). No total são 26 ativos por requisição (16 BR + 10 US). A lista espelho em src/constants/investments.ts (export SIGNALS) fornece os valores iniciais de exibição e metadados (setor, sinal, força) usados como fallback enquanto a cotação ao vivo não chega."
+        ],
+        "tables": [
+          {
+            "caption": "BR_SYMBOLS — mercado brasileiro, câmbio e cripto (16 ativos)",
+            "headers": [
+              "Símbolo",
+              "Nome (SIGNALS)",
+              "Setor",
+              "Região"
+            ],
+            "rows": [
+              [
+                "^BVSP",
+                "Ibovespa",
+                "Índice",
+                "BR"
+              ],
+              [
+                "USDBRL=X",
+                "Dólar Comercial",
+                "Câmbio",
+                "BR"
+              ],
+              [
+                "BTC-USD",
+                "Bitcoin",
+                "Cripto",
+                "BR"
+              ],
+              [
+                "PETR4.SA",
+                "Petrobras PN",
+                "Energia",
+                "BR"
+              ],
+              [
+                "VALE3.SA",
+                "Vale ON",
+                "Mineração",
+                "BR"
+              ],
+              [
+                "ITUB4.SA",
+                "Itaú Unibanco",
+                "Financeiro",
+                "BR"
+              ],
+              [
+                "BBDC4.SA",
+                "Bradesco PN",
+                "Financeiro",
+                "BR"
+              ],
+              [
+                "MGLU3.SA",
+                "Magazine Luiza",
+                "Varejo",
+                "BR"
+              ],
+              [
+                "WEGE3.SA",
+                "WEG SA",
+                "Industrial",
+                "BR"
+              ],
+              [
+                "ABEV3.SA",
+                "Ambev",
+                "Diversos (sem SIGNALS dedicado)",
+                "BR"
+              ],
+              [
+                "B3SA3.SA",
+                "B3",
+                "Diversos",
+                "BR"
+              ],
+              [
+                "ELET3.SA",
+                "Eletrobras",
+                "Diversos",
+                "BR"
+              ],
+              [
+                "RENT3.SA",
+                "Localiza",
+                "Diversos",
+                "BR"
+              ],
+              [
+                "BBAS3.SA",
+                "Banco do Brasil",
+                "Diversos",
+                "BR"
+              ],
+              [
+                "SUZB3.SA",
+                "Suzano",
+                "Diversos",
+                "BR"
+              ],
+              [
+                "RADL3.SA",
+                "Raia Drogasil",
+                "Diversos",
+                "BR"
+              ]
+            ]
+          },
+          {
+            "caption": "US_SYMBOLS — índices e ações dos EUA (10 ativos)",
+            "headers": [
+              "Símbolo",
+              "Nome (SIGNALS)",
+              "Setor",
+              "Região"
+            ],
+            "rows": [
+              [
+                "^GSPC",
+                "S&P 500",
+                "Índice",
+                "US"
+              ],
+              [
+                "^IXIC",
+                "Nasdaq Composite",
+                "Índice",
+                "US"
+              ],
+              [
+                "^DJI",
+                "Dow Jones",
+                "Índice",
+                "US"
+              ],
+              [
+                "AAPL",
+                "Apple Inc.",
+                "Tecnologia",
+                "US"
+              ],
+              [
+                "MSFT",
+                "Microsoft",
+                "Tecnologia",
+                "US"
+              ],
+              [
+                "NVDA",
+                "NVIDIA",
+                "Semicondutores",
+                "US"
+              ],
+              [
+                "GOOGL",
+                "Alphabet",
+                "Tecnologia",
+                "US"
+              ],
+              [
+                "AMZN",
+                "Amazon",
+                "Varejo",
+                "US"
+              ],
+              [
+                "TSLA",
+                "Tesla",
+                "Automotivo",
+                "US"
+              ],
+              [
+                "META",
+                "Meta Platforms",
+                "Tecnologia",
+                "US"
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "heading": "Fonte e ranqueamento de notícias (server/news.ts)",
+        "paragraphs": [
+          "O módulo server/news.ts coleta notícias de duas fontes e as combina: (1) feeds RSS de portais financeiros brasileiros, lidos com fast-xml-parser (XMLParser com cdataPropName: \"__cdata\"), e (2) resultados de yahooFinance.search. A função exportada fetchAssetNews monta um perfil do ativo (buildAssetNewsProfile) com query de busca e aliases, executa RSS e Yahoo em paralelo, deduplica por título+fonte (dedupeNewsItems), ordena por data de publicação e corta em maxItems (padrão 8).",
+          "Os feeds RSS ficam em cache em memória por 5 minutos (FEED_CACHE_TTL_MS = 5 * 60 * 1000), com no máximo 200 itens por fonte (MAX_FEED_ITEMS_PER_SOURCE) e proteção contra requisições concorrentes via inFlightFeedItems. A relevância de cada notícia é calculada por scoreNewsItem, que pondera correspondências em título, categorias, URL, resumo e conteúdo, com pesos reduzidos para aliases de baixa precisão (curtos, sem dígitos e sem espaço, até 5 caracteres). O perfil estático de cada ativo (STATIC_ASSET_PROFILES) define aliases como \"Ibovespa\"/\"B3\" para ^BVSP, \"Petrobras\"/\"PETR4\"/\"PETR3\" para PETR4.SA, \"S&P 500\"/\"Wall Street\" para ^GSPC, etc.",
+          "summarizeNewsCoverage produz um resumo de cobertura (totalItems, sources, sourceCounts e latestPublishedAt) usado em /api/asset-context para alimentar a Análise IA Premium."
+        ],
+        "bullets": [
+          "Fontes RSS configuradas em RSS_SOURCES: InfoMoney, Money Times, Seu Dinheiro, E-Investidor, Exame Invest, Brazil Journal e Suno Notícias.",
+          "Cada MarketNewsItem traz: title, source, url, summary?, publishedAt?, provider (\"yahoo\" | \"rss\") e matchedTerms[].",
+          "Limiares de score: RSS exige score >= 4; Yahoo exige >= 2 (query descritiva) ou >= 4, mais a condição (hasTextualMatch || score >= 6)."
+        ]
+      },
+      {
+        "heading": "Página Investimentos.ai (src/pages/Investments.tsx)",
+        "paragraphs": [
+          "A página é o painel principal de mercado, apresentado como \"Investimentos.ai\". Ela inicializa o estado signals a partir de INITIAL_SIGNALS (importado de constants/investments) e, num useEffect, busca /api/market-data com axios, remapeando cada item para o formato de sinal exibido. A cada item são derivados signal (COMPRA se change > 1, VENDA se change < -1, senão NEUTRO), strength, rsi, macd e sentiment quando o ativo não existe em INITIAL_SIGNALS. O preço numérico é formatado por formatAssetPrice antes de ir para a UI.",
+          "Há atualização automática: a busca é repetida a cada 60 segundos (setInterval(fetchMarketData, 60000)). Na primeira carga (guardada por hasRunAI.current), a página chama generateBatchSignals (serviço de IA) sobre os dados de mercado para gerar signal/strength/rationale por ativo, exibindo o aviso \"A IA está analisando...\"; o rationale gerado pela IA é preservado entre atualizações subsequentes.",
+          "A página é organizada em cinco abas (Radar, Sinais, Scanner, Watchlist e Sentimento) numa barra de navegação flutuante, e exibe um aviso legal proeminente de que os sinais são gerados por IA apenas para fins educacionais e NÃO constituem recomendação de investimento. Clicar em um ativo abre o AssetDetailsModal, que busca o histórico em /api/historical/:symbol (gráfico de 90 dias com recharts) e, na aba \"Análise IA Premium\", busca /api/asset-context/:symbol e chama analyzeAsset."
+        ],
+        "code_blocks": [
+          {
+            "caption": "Seletor de região 🌎/🇧🇷/🇺🇸 e filtragem dos sinais visíveis",
+            "lang": "tsx",
+            "code": "const [marketRegion, setMarketRegion] = useState<'ALL' | 'BR' | 'US'>('ALL');\nconst visibleSignals = marketRegion === 'ALL'\n  ? signals\n  : signals.filter((s: any) => regionOf(s.symbol, s.region) === marketRegion);\n\nconst REGION_TABS = [\n  { id: 'ALL', label: '🌎 Todos' },\n  { id: 'BR',  label: '🇧🇷 Brasil' },\n  { id: 'US',  label: '🇺🇸 EUA' },\n];"
+          },
+          {
+            "caption": "Formatação de preço por moeda/região e detecção de região por símbolo",
+            "lang": "tsx",
+            "code": "function formatAssetPrice(price: number, currency?: string, region?: 'BR' | 'US'): string {\n  const safeCurrency =\n    currency === 'USD' || currency === 'BRL' ? currency : region === 'US' ? 'USD' : 'BRL';\n  const locale = safeCurrency === 'USD' ? 'en-US' : 'pt-BR';\n  return price.toLocaleString(locale, { style: 'currency', currency: safeCurrency });\n}\n\nfunction regionOf(symbol: string, region?: string): 'BR' | 'US' {\n  if (region === 'US' || region === 'BR') return region;\n  return /^(AAPL|MSFT|NVDA|GOOGL|AMZN|TSLA|META)$|^\\^(GSPC|IXIC|DJI)$/.test(symbol) ? 'US' : 'BR';\n}"
+          }
+        ],
+        "bullets": [
+          "TICKER_LABELS converte símbolos especiais em rótulos amigáveis: ^BVSP → IBOVESPA, USDBRL=X → USD/BRL, BTC-USD → BTC/USD, ^GSPC → S&P 500, ^IXIC → NASDAQ, ^DJI → DOW JONES; demais símbolos têm o sufixo .SA removido.",
+          "Ativos US usam locale en-US e moeda USD (US$); ativos BR usam pt-BR e BRL (R$). O símbolo de moeda no modal (curSymbol) é US$ quando currency === 'USD' ou a região é US, senão R$.",
+          "O contador de ativos no cabeçalho reflete visibleSignals.length conforme a região selecionada."
+        ]
+      },
+      {
+        "heading": "Ticker da home (src/components/MarketTicker.tsx)",
+        "paragraphs": [
+          "O MarketTicker é uma faixa rolante exibida na home. Ele também consome GET /api/market-data via axios, atualizando a cada 60 segundos, e usa MARKET_DATA (de constants/investments.ts) como fallback inicial enquanto a API não responde ou em caso de erro. O valor numérico é formatado por formatTickerValue, que aplica locale en-US para USD e pt-BR caso contrário, sempre com 2 casas decimais (sem símbolo de moeda).",
+          "A animação de rolagem é feita ajustando um offset de translateX a cada 30ms; para garantir scroll infinito suave, a lista de dados é triplicada ([...marketData, ...marketData, ...marketData]). Cada item mostra nome, valor e a variação percentual com seta de alta/baixa (verde para change > 0, vermelho caso contrário). Os nomes de símbolos são normalizados inline (ex.: ^BVSP → IBOVESPA, ^GSPC → S&P 500, .SA removido)."
+        ],
+        "bullets": [
+          "Fallback FALLBACK_DATA (MARKET_DATA) cobre 7 ativos: IBOVESPA, USD/BRL, BTC/USD, PETR4, S&P 500, AAPL e NVDA.",
+          "formatTickerValue: locale 'en-US' se currency === 'USD', senão 'pt-BR'; minimumFractionDigits/maximumFractionDigits = 2.",
+          "A faixa só substitui o fallback quando formattedData.length > 0, evitando esvaziar o ticker em respostas vazias."
+        ]
+      }
+    ],
+    "icon": "trending"
+  }
+]
