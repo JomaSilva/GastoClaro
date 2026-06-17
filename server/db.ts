@@ -55,6 +55,14 @@ db.exec(`
     payload          TEXT NOT NULL,
     created_at       TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS usage_counters (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    period  TEXT NOT NULL,   -- 'YYYY-MM'
+    kind    TEXT NOT NULL,   -- 'report' | 'ai_analysis'
+    count   INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, period, kind)
+  );
 `);
 
 // ---------- Migrações para bancos já existentes ----------
@@ -235,6 +243,22 @@ export function getReportById(id: string, userId: string): ReportRow | undefined
 
 export function deleteReport(id: string, userId: string): void {
   db.prepare("DELETE FROM reports WHERE id = ? AND user_id = ?").run(id, userId);
+}
+
+// ---------- Contadores de uso mensal (limites de plano) ----------
+
+export function getUsageCount(userId: string, period: string, kind: string): number {
+  const row = db
+    .prepare("SELECT count FROM usage_counters WHERE user_id = ? AND period = ? AND kind = ?")
+    .get(userId, period, kind) as { count: number } | undefined;
+  return row?.count ?? 0;
+}
+
+export function incrementUsage(userId: string, period: string, kind: string): void {
+  db.prepare(
+    `INSERT INTO usage_counters (user_id, period, kind, count) VALUES (?, ?, ?, 1)
+     ON CONFLICT(user_id, period, kind) DO UPDATE SET count = count + 1`
+  ).run(userId, period, kind);
 }
 
 // ---------- Sessões ----------

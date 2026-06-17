@@ -97,6 +97,7 @@ function ReportDetailModal({
 export default function History() {
   const { token } = useAuth();
   const [reports, setReports] = useState<ReportSummary[]>([]);
+  const [historyMonths, setHistoryMonths] = useState<number | 'ilimitado' | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -116,6 +117,7 @@ export default function History() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Falha ao carregar histórico.');
       setReports(data.reports || []);
+      setHistoryMonths(data.historyMonths ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao carregar histórico.');
     } finally {
@@ -185,6 +187,17 @@ export default function History() {
           />
         </div>
       </div>
+
+      {historyMonths && historyMonths !== 'ilimitado' && (
+        <div className="mb-6 flex items-center justify-between gap-3 rounded-xl border border-zinc-200/60 bg-zinc-50 px-4 py-3 text-sm dark:border-zinc-800/60 dark:bg-zinc-900/40">
+          <span className="text-zinc-600 dark:text-zinc-400">
+            Seu plano exibe o histórico dos <strong>últimos {historyMonths} meses</strong>.
+          </span>
+          <Link to="/plans" className="shrink-0 text-xs font-bold text-brand-600 hover:underline dark:text-brand-400">
+            Ver planos →
+          </Link>
+        </div>
+      )}
 
       {error && (
         <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-400">

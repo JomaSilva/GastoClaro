@@ -1,16 +1,40 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, Loader2, RefreshCw, TrendingUp, AlertCircle, Image as ImageIcon, X, Upload, Download, FileSpreadsheet, Check, Zap, ArrowRight } from 'lucide-react';
+import { Send, Loader2, RefreshCw, TrendingUp, AlertCircle, Image as ImageIcon, X, Upload, Download, FileSpreadsheet, Printer, Check, Zap, ArrowRight, Lock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { processExpenses } from '../services/claude';
 import { useAuth } from '../context/AuthContext';
+import { meetsPlan, isAdminRole } from '../constants/plans';
 import { SIGNALS } from '../constants/investments';
 import { ExpenseReport } from '../types';
 import { ExpenseTable } from '../components/ExpenseTable';
 import { ExpenseCharts } from '../components/ExpenseCharts';
 import { InsightCards } from '../components/InsightCards';
-import { formatCurrency, fileToBase64 } from '../lib/utils';
-import { downloadCSV, copyToGoogleSheets } from '../lib/exportUtils';
+import { cn, formatCurrency, fileToBase64 } from '../lib/utils';
+import { downloadCSV, downloadExcel, exportPDF, copyToGoogleSheets } from '../lib/exportUtils';
+
+interface UsageInfo {
+  reports: { used: number; limit: number | 'ilimitado' };
+  aiAnalyses: { used: number; limit: number | 'ilimitado' };
+}
+
+function UsageBadge({ label, used, limit }: { label: string; used: number; limit: number | 'ilimitado' }) {
+  const unlimited = limit === 'ilimitado';
+  const reached = !unlimited && used >= (limit as number);
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-medium',
+        reached
+          ? 'border-rose-200 bg-rose-50 text-rose-600 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-400'
+          : 'border-zinc-200 bg-white/60 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-300'
+      )}
+    >
+      <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">{label}</span>
+      <span>{unlimited ? 'ilimitado' : `${used}/${limit}`}</span>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const { token, user } = useAuth();
@@ -20,7 +44,23 @@ export default function Dashboard() {
   const [report, setReport] = useState<ExpenseReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [usage, setUsage] = useState<UsageInfo | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Pro/Invest (e admin) liberam exportação avançada (PDF e Excel).
+  const canAdvancedExport = !!user && (isAdminRole(user.role) || meetsPlan(user.plan, 'pro'));
+
+  const refreshUsage = () => {
+    if (!token) return;
+    fetch('/api/usage', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => data && setUsage(data))
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    refreshUsage();
+  }, [token]);
 
   // Reage à troca de usuário (login/logout): isola o Dashboard entre contas.
   // O cache global 'last_report' é limpo pelo AuthContext ao logar/deslogar, então
@@ -98,9 +138,11 @@ export default function Dashboard() {
           body: JSON.stringify({ report: result }),
         }).catch(() => {});
       }
+      refreshUsage();
     } catch (err) {
       console.error(err);
-      setError('Ocorreu um erro ao processar seus gastos. Tente novamente.');
+      // Mostra a mensagem real do servidor (ex.: limite mensal do plano atingido).
+      setError(err instanceof Error ? err.message : 'Ocorreu um erro ao processar seus gastos. Tente novamente.');
     } finally {
       setIsLoading(false);
     }
@@ -124,10 +166,23 @@ export default function Dashboard() {
             exit={{ opacity: 0, y: -20 }}
             className="mx-auto max-w-3xl"
           >
-            <div className="text-center mb-10">
+            <div className="text-center mb-8">
               <h1 className="text-4xl font-light text-zinc-900 dark:text-white font-serif tracking-tight">O que você gastou hoje?</h1>
               <p className="mt-3 text-zinc-500 dark:text-zinc-400 font-light tracking-wide">Digite seus gastos ou envie imagens das suas faturas/extratos.</p>
             </div>
+
+            {usage && (
+              <div className="mb-8 flex flex-wrap items-center justify-center gap-3">
+                <UsageBadge label="Relatórios/mês" used={usage.reports.used} limit={usage.reports.limit} />
+                <UsageBadge label="Análises IA/mês" used={usage.aiAnalyses.used} limit={usage.aiAnalyses.limit} />
+                {((usage.reports.limit !== 'ilimitado' && usage.reports.used >= (usage.reports.limit as number)) ||
+                  (usage.aiAnalyses.limit !== 'ilimitado' && usage.aiAnalyses.used >= (usage.aiAnalyses.limit as number))) && (
+                  <Link to="/plans" className="text-xs font-bold text-brand-600 hover:underline dark:text-brand-400">
+                    Fazer upgrade →
+                  </Link>
+                )}
+              </div>
+            )}
 
             <div className="rounded-[2rem] border border-white/20 bg-white/50 p-8 shadow-2xl backdrop-blur-xl dark:border-zinc-800/50 dark:bg-zinc-900/50">
               <div className="relative">
@@ -255,6 +310,24 @@ export default function Dashboard() {
                 >
                   <Download size={18} strokeWidth={1.5} />
                   <span className="hidden sm:inline">CSV</span>
+                </button>
+                <button
+                  onClick={() => canAdvancedExport && downloadExcel(report)}
+                  disabled={!canAdvancedExport}
+                  title={canAdvancedExport ? 'Baixar Excel (.xls)' : 'Exportação Excel: disponível nos planos Pro e Invest'}
+                  className="flex items-center gap-2 rounded-full border border-white/20 bg-white/50 px-5 py-2.5 text-sm font-medium text-zinc-600 transition-all hover:bg-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700/50 dark:bg-zinc-800/50 dark:text-zinc-300 dark:hover:bg-zinc-700 shadow-sm backdrop-blur-md"
+                >
+                  {canAdvancedExport ? <FileSpreadsheet size={18} strokeWidth={1.5} /> : <Lock size={14} />}
+                  <span className="hidden sm:inline">Excel</span>
+                </button>
+                <button
+                  onClick={() => canAdvancedExport && exportPDF(report)}
+                  disabled={!canAdvancedExport}
+                  title={canAdvancedExport ? 'Exportar PDF' : 'Exportação PDF: disponível nos planos Pro e Invest'}
+                  className="flex items-center gap-2 rounded-full border border-white/20 bg-white/50 px-5 py-2.5 text-sm font-medium text-zinc-600 transition-all hover:bg-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700/50 dark:bg-zinc-800/50 dark:text-zinc-300 dark:hover:bg-zinc-700 shadow-sm backdrop-blur-md"
+                >
+                  {canAdvancedExport ? <Printer size={18} strokeWidth={1.5} /> : <Lock size={14} />}
+                  <span className="hidden sm:inline">PDF</span>
                 </button>
                 <button
                   onClick={async () => {

@@ -54,25 +54,6 @@ function regionOf(symbol: string, region?: string): 'BR' | 'US' {
   return /^(AAPL|MSFT|NVDA|GOOGL|AMZN|TSLA|META)$|^\^(GSPC|IXIC|DJI)$/.test(symbol) ? 'US' : 'BR';
 }
 
-function SignalBadge({ signal }: { signal: string }) {
-  const cfg: Record<string, { bg: string, text: string, label: string }> = {
-    COMPRA: { bg: "bg-emerald-100 dark:bg-emerald-900/30", text: "text-emerald-700 dark:text-emerald-400", label: "COMPRA" },
-    VENDA: { bg: "bg-rose-100 dark:bg-rose-900/30", text: "text-rose-700 dark:text-rose-400", label: "VENDA" },
-    NEUTRO: { bg: "bg-brand-100 dark:bg-brand-900/30", text: "text-brand-700 dark:text-brand-400", label: "NEUTRO" },
-  };
-  const current = cfg[signal] || cfg.NEUTRO;
-  return (
-    <span className={cn(
-      "rounded-md px-2 py-0.5 text-[10px] font-bold tracking-wider border",
-      current.bg,
-      current.text,
-      "border-current/20"
-    )}>
-      {current.label}
-    </span>
-  );
-}
-
 function StrengthBar({ value, signal }: { value: number, signal: string }) {
   const color = signal === "COMPRA" ? "bg-emerald-500" : signal === "VENDA" ? "bg-rose-500" : "bg-brand-500";
   return (
@@ -141,7 +122,8 @@ function AssetDetailsModal({ asset, onClose }: { asset: any, onClose: () => void
       setAiAnalysis(analysis);
     } catch (e) {
       console.error(e);
-      setAiAnalysis("Não foi possível gerar a análise no momento. Tente novamente mais tarde.");
+      // Surfacing a mensagem do servidor (ex.: limite mensal de análises do plano).
+      setAiAnalysis(e instanceof Error ? e.message : "Não foi possível gerar a análise no momento. Tente novamente mais tarde.");
     } finally {
       setIsAnalyzing(false);
     }
@@ -307,7 +289,6 @@ function RadarScreen({ signals, onSelectAsset, isAnalyzing }: { signals: any[], 
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-xl font-light text-zinc-900 dark:text-white font-serif">{s.ticker}</span>
-                    <SignalBadge signal={s.signal} />
                   </div>
                   <div className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5">{s.name} · {s.sector}</div>
                   {s.rationale && (
@@ -410,7 +391,6 @@ function SignalsScreen({ signals, onSelectAsset, isAnalyzing }: { signals: any[]
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-xl font-light text-zinc-900 dark:text-white font-serif font-mono">{s.ticker}</span>
-                  <SignalBadge signal={s.signal} />
                 </div>
                 <div className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5">{s.name}</div>
                 {s.rationale && (
@@ -846,7 +826,6 @@ function WatchlistScreen({
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-xl font-light text-zinc-900 dark:text-white font-serif font-mono">{item.ticker}</span>
-                  <SignalBadge signal={item.signal} />
                 </div>
                 <div className="text-[10px] text-zinc-500 dark:text-zinc-400">{item.name} · {item.sector}</div>
               </div>

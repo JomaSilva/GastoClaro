@@ -11,8 +11,12 @@ import {
   createCheckoutRouter,
   createAdminRouter,
   createReportsRouter,
+  createUsageRouter,
   fulfillStripeCheckout,
   requirePlan,
+  quotaStatus,
+  consumeQuota,
+  type AuthedRequest,
 } from "./server/auth";
 import { verifyStripeWebhook } from "./server/payments";
 
@@ -66,10 +70,20 @@ async function startServer() {
   app.use("/api/auth", createAuthRouter());
   app.use("/api/admin", createAdminRouter());
   app.use("/api/reports", createReportsRouter());
+  app.use("/api/usage", createUsageRouter());
   app.use("/api/checkout", createCheckoutRouter());
 
   app.post("/api/ai/process-expenses", requirePlan("standard"), async (req, res) => {
     try {
+      const user = (req as AuthedRequest).user!;
+      const status = quotaStatus(user, "report");
+      if (!status.allowed) {
+        res.status(429).json({
+          error: `Você atingiu o limite de ${status.limit} relatórios do seu plano neste mês. Faça upgrade para criar mais.`,
+        });
+        return;
+      }
+
       const { text = "", imagesData = [] } = req.body ?? {};
 
       if (typeof text !== "string" || !Array.isArray(imagesData)) {
@@ -78,6 +92,7 @@ async function startServer() {
       }
 
       const report = await processExpenses(text, imagesData);
+      consumeQuota(user, "report");
       res.json(report);
     } catch (error) {
       console.error("Error in /api/ai/process-expenses:", error);
@@ -104,6 +119,15 @@ async function startServer() {
 
   app.post("/api/ai/analyze-asset", requirePlan("standard"), async (req, res) => {
     try {
+      const user = (req as AuthedRequest).user!;
+      const status = quotaStatus(user, "ai_analysis");
+      if (!status.allowed) {
+        res.status(429).json({
+          error: `Você atingiu o limite de ${status.limit} análises com IA do seu plano neste mês. Faça upgrade para analisar mais ativos.`,
+        });
+        return;
+      }
+
       const { symbol, contextData } = req.body ?? {};
 
       if (typeof symbol !== "string" || !symbol.trim()) {
@@ -112,6 +136,7 @@ async function startServer() {
       }
 
       const analysis = await analyzeAsset(symbol, contextData ?? {});
+      consumeQuota(user, "ai_analysis");
       res.json({ analysis });
     } catch (error) {
       console.error("Error in /api/ai/analyze-asset:", error);

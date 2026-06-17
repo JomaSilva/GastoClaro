@@ -63,6 +63,14 @@ Notes:
 
 - **Dashboard** e **Investimentos** exigem login **+ plano ≥ Standard** (admins sempre passam). A navbar esconde esses links de quem não tem acesso, e a rota é barrada no cliente (inclusive digitando `/dashboard` manualmente) via `ProtectedRoute`, **e** no servidor: os endpoints de IA (`/api/ai/*`) usam `requirePlan("standard")`. `/api/market-data` segue público (ticker da home).
 - **Histórico** (`/history`) exige login (qualquer plano) e mostra os relatórios **reais** do usuário. Cada análise do Dashboard é persistida na tabela `reports` (por usuário) e listada no histórico, com detalhe e exclusão. Endpoints: `GET/POST/DELETE /api/reports`.
+
+## Limites de plano realmente aplicados
+
+Os números dos cards de plano são enforcados no servidor (admins têm tudo ilimitado):
+- **Relatórios/mês**: Standard 30 · Pro 100 · Invest ∞. Ao atingir, `POST /api/ai/process-expenses` retorna **429** (antes de chamar a IA).
+- **Análises com IA/mês**: Standard 50 · Pro 200 · Invest ∞ (conta as análises profundas de ativo). Excedeu → 429.
+- **Histórico**: Standard 3 meses · Pro 12 · Invest ∞. `GET /api/reports` filtra pela janela do plano.
+- **Exportação**: CSV para todos; **Excel (.xls) e PDF** liberados no **Pro+** (no Dashboard). Contadores em `usage_counters`, consultáveis em `GET /api/usage` (usado para mostrar o consumo do mês no Dashboard).
 - **Login com Google** aparece sempre no login/cadastro; sem `GOOGLE_CLIENT_ID` o botão explica como ativar em vez de sumir.
 
 ## Mercado BR + EUA

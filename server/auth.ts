@@ -22,9 +22,11 @@ import {
   listReportsByUser,
   getReportById,
   deleteReport,
+  getUsageCount,
+  incrementUsage,
   type UserRow,
 } from "./db";
-import { PLANS, meetsPlan, isAdminRole, type PlanId, type AccountPlan } from "../src/constants/plans";
+import { PLANS, getPlan, meetsPlan, isAdminRole, type PlanId, type AccountPlan } from "../src/constants/plans";
 import { isStripeEnabled, createCheckoutSession, retrieveCheckoutSession } from "./payments";
 
 // Ativa o plano a partir de uma sessão de checkout paga da Stripe (idempotente).
@@ -114,6 +116,73 @@ export function requirePlan(minPlan: AccountPlan) {
       });
     });
   };
+}
+
+// ---------- Limites de uso por plano (relatórios/mês, análises IA/mês, histórico) ----------
+
+export type QuotaKind = "report" | "ai_analysis";
+
+function currentPeriod(): string {
+  return new Date().toISOString().slice(0, 7); // 'YYYY-MM'
+}
+
+function planLimitFor(plan: string, kind: QuotaKind): number | "ilimitado" {
+  const def = getPlan(plan);
+  if (!def) return 0; // 'free' não tem cota nesses recursos (já bloqueado por requirePlan)
+  return kind === "report" ? def.limits.reportsPerMonth : def.limits.aiAnalysesPerMonth;
+}
+
+function historyMonthsFor(user: UserRow): number | "ilimitado" {
+  if (isAdminRole(user.role)) return "ilimitado";
+  const def = getPlan(user.plan);
+  return def ? def.limits.historyMonths : 3; // 'free' vê os últimos 3 meses (piso)
+}
+
+// Verifica se o usuário ainda tem cota para a ação (admins têm acesso ilimitado).
+export function quotaStatus(
+  user: UserRow,
+  kind: QuotaKind
+): { allowed: boolean; used: number; limit: number | "ilimitado" } {
+  if (isAdminRole(user.role)) return { allowed: true, used: 0, limit: "ilimitado" };
+  const limit = planLimitFor(user.plan, kind);
+  if (limit === "ilimitado") return { allowed: true, used: 0, limit };
+  const used = getUsageCount(user.id, currentPeriod(), kind);
+  return { allowed: used < limit, used, limit };
+}
+
+// Consome 1 unidade da cota (não conta para admins nem planos ilimitados).
+export function consumeQuota(user: UserRow, kind: QuotaKind): void {
+  if (isAdminRole(user.role)) return;
+  if (planLimitFor(user.plan, kind) === "ilimitado") return;
+  incrementUsage(user.id, currentPeriod(), kind);
+}
+
+function usageSummary(user: UserRow) {
+  const period = currentPeriod();
+  const admin = isAdminRole(user.role);
+  const reportsLimit = admin ? "ilimitado" : planLimitFor(user.plan, "report");
+  const aiLimit = admin ? "ilimitado" : planLimitFor(user.plan, "ai_analysis");
+  return {
+    period,
+    plan: user.plan,
+    reports: {
+      used: reportsLimit === "ilimitado" ? 0 : getUsageCount(user.id, period, "report"),
+      limit: reportsLimit,
+    },
+    aiAnalyses: {
+      used: aiLimit === "ilimitado" ? 0 : getUsageCount(user.id, period, "ai_analysis"),
+      limit: aiLimit,
+    },
+    historyMonths: historyMonthsFor(user),
+  };
+}
+
+export function createUsageRouter(): Router {
+  const router = express.Router();
+  router.get("/", requireAuth, (req: AuthedRequest, res) => {
+    res.json(usageSummary(req.user!));
+  });
+  return router;
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -444,9 +513,16 @@ export function createReportsRouter(): Router {
     res.status(201).json({ id: saved.id, createdAt: saved.created_at });
   });
 
-  // GET /api/reports — lista o histórico (resumos) do usuário
+  // GET /api/reports — lista o histórico do usuário, respeitando a janela do plano
   router.get("/", requireAuth, (req: AuthedRequest, res) => {
-    const reports = listReportsByUser(req.user!.id).map((r) => ({
+    const months = historyMonthsFor(req.user!);
+    let rows = listReportsByUser(req.user!.id);
+    if (months !== "ilimitado") {
+      const cutoff = new Date();
+      cutoff.setMonth(cutoff.getMonth() - months);
+      rows = rows.filter((r) => new Date(r.created_at).getTime() >= cutoff.getTime());
+    }
+    const reports = rows.map((r) => ({
       id: r.id,
       totalAmount: r.total_amount,
       highestCategory: r.highest_category,
@@ -454,7 +530,7 @@ export function createReportsRouter(): Router {
       monthReference: r.month_reference,
       createdAt: r.created_at,
     }));
-    res.json({ reports });
+    res.json({ reports, historyMonths: months });
   });
 
   // GET /api/reports/:id — relatório completo (apenas do próprio usuário)
