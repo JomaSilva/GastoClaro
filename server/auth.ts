@@ -371,12 +371,14 @@ export function createAuthRouter(): Router {
     }
     const row = getVerificationToken(token);
     if (!row) {
-      res.status(400).json({ error: "Link inválido ou já utilizado." });
+      // Token de uso único: ausente = nunca existiu OU já foi consumido (e-mail provavelmente
+      // já confirmado). O front usa o code para guiar ao login em vez de mostrar erro grave.
+      res.status(400).json({ error: "Link inválido ou já utilizado.", code: "invalid_or_used" });
       return;
     }
     if (new Date(row.expires_at).getTime() < Date.now()) {
       deleteVerificationToken(token);
-      res.status(400).json({ error: "Link expirado. Solicite um novo e-mail de verificação." });
+      res.status(400).json({ error: "Link expirado. Solicite um novo e-mail de verificação.", code: "expired" });
       return;
     }
     markEmailVerified(row.user_id);

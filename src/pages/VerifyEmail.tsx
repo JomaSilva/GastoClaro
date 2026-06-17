@@ -12,6 +12,7 @@ export default function VerifyEmail() {
 
   const [status, setStatus] = useState<Status>('loading');
   const [message, setMessage] = useState('');
+  const [errorCode, setErrorCode] = useState<string | undefined>();
 
   // O token de verificação é de uso único (o servidor o apaga após confirmar).
   // Sem esta trava, o disparo duplo do efeito no React StrictMode (dev) enviaria
@@ -34,7 +35,7 @@ export default function VerifyEmail() {
       .then(async (res) => {
         const data = await res.json().catch(() => ({})) as Record<string, unknown>;
         if (!res.ok) {
-          throw new ApiError((data.error as string) || 'Falha na verificação.');
+          throw new ApiError((data.error as string) || 'Falha na verificação.', data.code as string | undefined);
         }
         const { token: sessionToken, user } = data as { token: string; user: unknown };
         if (sessionToken) {
@@ -50,6 +51,7 @@ export default function VerifyEmail() {
       })
       .catch((err) => {
         setStatus('error');
+        if (err instanceof ApiError) setErrorCode(err.code);
         setMessage(err instanceof Error ? err.message : 'Falha ao verificar o e-mail.');
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -83,11 +85,17 @@ export default function VerifyEmail() {
         {status === 'error' && (
           <>
             <div className="flex justify-center">
-              <XCircle size={56} className="text-red-500" />
+              <XCircle size={56} className={errorCode === 'invalid_or_used' ? 'text-amber-500' : 'text-red-500'} />
             </div>
             <div>
-              <h2 className="text-2xl font-semibold text-zinc-900 dark:text-white">Verificação falhou</h2>
-              <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">{message}</p>
+              <h2 className="text-2xl font-semibold text-zinc-900 dark:text-white">
+                {errorCode === 'invalid_or_used' ? 'Link já utilizado' : 'Verificação falhou'}
+              </h2>
+              <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+                {errorCode === 'invalid_or_used'
+                  ? 'Este link de confirmação já foi usado. Se você já confirmou seu e-mail, é só fazer login normalmente.'
+                  : message}
+              </p>
             </div>
             <div className="space-y-3">
               <Link
