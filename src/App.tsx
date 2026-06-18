@@ -34,7 +34,7 @@ function AppContent() {
         <Route
           path="/dashboard"
           element={
-            <ProtectedRoute minPlan="standard">
+            <ProtectedRoute>
               <Dashboard />
             </ProtectedRoute>
           }
@@ -50,7 +50,7 @@ function AppContent() {
         <Route
           path="/investments"
           element={
-            <ProtectedRoute minPlan="standard">
+            <ProtectedRoute>
               <Investments />
             </ProtectedRoute>
           }

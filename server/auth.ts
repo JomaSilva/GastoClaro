@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction, Router } from "express";
 import express from "express";
+import { rateLimit } from "express-rate-limit";
 import {
   createUser,
   getUserByEmail,
@@ -8,9 +9,11 @@ import {
   getUserByGoogleId,
   createGoogleUser,
   linkGoogleId,
+  hashPassword,
   verifyPassword,
   createSession,
   deleteSession,
+  deleteSessionsByUser,
   updateUserPlan,
   updateUserFields,
   deleteUser,
@@ -23,7 +26,8 @@ import {
   getReportById,
   deleteReport,
   getUsageCount,
-  incrementUsage,
+  tryReserveUsage,
+  refundUsage,
   createVerificationToken,
   getVerificationToken,
   deleteVerificationToken,
@@ -31,7 +35,7 @@ import {
   type UserRow,
 } from "./db";
 import { sendVerificationEmail } from "./email";
-import { PLANS, getPlan, meetsPlan, isAdminRole, type PlanId, type AccountPlan } from "../src/constants/plans";
+import { PLANS, limitsForPlan, meetsPlan, isAdminRole, type PlanId, type AccountPlan } from "../src/constants/plans";
 import { isStripeEnabled, createCheckoutSession, retrieveCheckoutSession } from "./payments";
 
 // Ativa o plano a partir de uma sessão de checkout paga da Stripe (idempotente).
@@ -55,6 +59,20 @@ export function fulfillStripeCheckout(session: any): boolean {
 }
 
 const BANNED_MESSAGE = "Sua conta foi suspensa. Entre em contato com o suporte.";
+
+// Limita tentativas em endpoints sensíveis de auth (anti brute-force / credential stuffing /
+// flood de e-mail). Por IP; janela de 15 min.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Muitas tentativas. Aguarde alguns minutos e tente novamente." },
+});
+
+// Hash descartável usado para equalizar o tempo do /login quando o e-mail não existe
+// (sem isto, pular o scrypt cria um oráculo de tempo que revela contas existentes).
+const TIMING_DUMMY_HASH = hashPassword("timing-equalizer-not-a-real-account");
 
 function publicUser(u: UserRow) {
   return {
@@ -133,34 +151,35 @@ function currentPeriod(): string {
 }
 
 function planLimitFor(plan: string, kind: QuotaKind): number | "ilimitado" {
-  const def = getPlan(plan);
-  if (!def) return 0; // 'free' não tem cota nesses recursos (já bloqueado por requirePlan)
-  return kind === "report" ? def.limits.reportsPerMonth : def.limits.aiAnalysesPerMonth;
+  const limits = limitsForPlan(plan); // 'free' recebe a cota de testes de FREE_LIMITS
+  return kind === "report" ? limits.reportsPerMonth : limits.aiAnalysesPerMonth;
 }
 
 function historyMonthsFor(user: UserRow): number | "ilimitado" {
   if (isAdminRole(user.role)) return "ilimitado";
-  const def = getPlan(user.plan);
-  return def ? def.limits.historyMonths : 3; // 'free' vê os últimos 3 meses (piso)
+  return limitsForPlan(user.plan).historyMonths;
 }
 
-// Verifica se o usuário ainda tem cota para a ação (admins têm acesso ilimitado).
-export function quotaStatus(
+// Reserva atômica de 1 unidade de cota ANTES da chamada de IA. Corrige a corrida TOCTOU
+// (checar-depois-consumir deixava requisições concorrentes passarem todas) e impede o
+// estouro do limite sob concorrência. Admins e planos ilimitados sempre passam sem consumir.
+// Se a ação falhar depois, chame releaseQuota para devolver a unidade.
+export function reserveQuota(
   user: UserRow,
   kind: QuotaKind
-): { allowed: boolean; used: number; limit: number | "ilimitado" } {
-  if (isAdminRole(user.role)) return { allowed: true, used: 0, limit: "ilimitado" };
+): { allowed: boolean; limit: number | "ilimitado" } {
+  if (isAdminRole(user.role)) return { allowed: true, limit: "ilimitado" };
   const limit = planLimitFor(user.plan, kind);
-  if (limit === "ilimitado") return { allowed: true, used: 0, limit };
-  const used = getUsageCount(user.id, currentPeriod(), kind);
-  return { allowed: used < limit, used, limit };
+  if (limit === "ilimitado") return { allowed: true, limit };
+  const allowed = tryReserveUsage(user.id, currentPeriod(), kind, limit);
+  return { allowed, limit };
 }
 
-// Consome 1 unidade da cota (não conta para admins nem planos ilimitados).
-export function consumeQuota(user: UserRow, kind: QuotaKind): void {
+// Devolve a cota reservada (quando a ação falhou após reserveQuota).
+export function releaseQuota(user: UserRow, kind: QuotaKind): void {
   if (isAdminRole(user.role)) return;
   if (planLimitFor(user.plan, kind) === "ilimitado") return;
-  incrementUsage(user.id, currentPeriod(), kind);
+  refundUsage(user.id, currentPeriod(), kind);
 }
 
 function usageSummary(user: UserRow) {
@@ -208,7 +227,16 @@ async function verifyGoogleIdToken(
   if (!response.ok) return null;
 
   const data = (await response.json()) as Record<string, unknown>;
-  if (data.aud !== clientId) return null;
+  // aud pode ser string ou array dependendo do fluxo — confere a pertinência ao nosso client.
+  const aud = data.aud;
+  const audOk = Array.isArray(aud) ? aud.includes(clientId) : aud === clientId;
+  if (!audOk) return null;
+  // Emissor deve ser o Google (defesa em profundidade além do tokeninfo).
+  const iss = String(data.iss ?? "");
+  if (iss !== "accounts.google.com" && iss !== "https://accounts.google.com") return null;
+  // Rejeita tokens expirados explicitamente (não confia só no tokeninfo).
+  const exp = Number(data.exp);
+  if (!Number.isFinite(exp) || exp * 1000 <= Date.now()) return null;
   if (!data.sub || !data.email) return null;
 
   return {
@@ -231,7 +259,7 @@ export function createAuthRouter(): Router {
   });
 
   // POST /api/auth/register
-  router.post("/register", async (req, res) => {
+  router.post("/register", authLimiter, async (req, res) => {
     const { name, email, password } = req.body ?? {};
 
     if (typeof name !== "string" || name.trim().length < 2) {
@@ -242,8 +270,16 @@ export function createAuthRouter(): Router {
       res.status(400).json({ error: "Informe um e-mail válido." });
       return;
     }
-    if (typeof password !== "string" || password.length < 6) {
-      res.status(400).json({ error: "A senha deve ter pelo menos 6 caracteres." });
+    if (typeof password !== "string" || password.length < 8) {
+      res.status(400).json({ error: "A senha deve ter pelo menos 8 caracteres." });
+      return;
+    }
+    if (password.length > 200) {
+      res.status(400).json({ error: "A senha é muito longa." });
+      return;
+    }
+    if (WEAK_PASSWORDS.has(password.toLowerCase())) {
+      res.status(400).json({ error: "Essa senha é muito comum. Escolha uma senha mais forte." });
       return;
     }
     if (getUserByEmail(email)) {

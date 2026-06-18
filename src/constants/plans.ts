@@ -83,6 +83,21 @@ export function getPlan(id: string | null | undefined): PlanDef | undefined {
   return PLANS.find((p) => p.id === id);
 }
 
+// Limites do plano gratuito. 'free' não é comprável (não entra em PLANS): é o
+// estado padrão da conta e serve para o usuário testar as funcionalidades do app
+// com cotas reduzidas antes de assinar.
+export const FREE_LIMITS: PlanDef["limits"] = {
+  reportsPerMonth: 5,
+  aiAnalysesPerMonth: 5,
+  historyMonths: 1,
+};
+
+// Limites efetivos de qualquer plano de conta, incluindo 'free' (e planos
+// desconhecidos, que caem no piso gratuito).
+export function limitsForPlan(plan: string | null | undefined): PlanDef["limits"] {
+  return getPlan(plan)?.limits ?? FREE_LIMITS;
+}
+
 // Hierarquia de acesso por plano. 'free' é o estado padrão (sem assinatura).
 export type AccountPlan = "free" | PlanId;
 

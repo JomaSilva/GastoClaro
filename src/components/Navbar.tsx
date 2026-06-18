@@ -4,7 +4,7 @@ import { LayoutDashboard, History, Wallet, Gem, LogOut, User as UserIcon, Shield
 import { cn } from '../lib/utils';
 import { ThemeToggle } from './ThemeToggle';
 import { useAuth } from '../context/AuthContext';
-import { meetsPlan, isAdminRole } from '../constants/plans';
+import { isAdminRole } from '../constants/plans';
 
 export function Navbar() {
   const location = useLocation();
@@ -17,8 +17,9 @@ export function Navbar() {
     setMobileOpen(false);
   }, [location.pathname]);
 
-  // Dashboard e Investimentos exigem login + plano >= Standard (admins sempre passam).
-  const canUsePlatform = !!user && (isAdminRole(user.role) || meetsPlan(user.plan, 'standard'));
+  // Dashboard e Investimentos ficam disponíveis para qualquer conta logada — o plano
+  // Free testa as funcionalidades e as cotas mensais são aplicadas no servidor.
+  const canUsePlatform = !!user;
 
   const navItems = [
     ...(canUsePlatform ? [{ path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }] : []),

@@ -252,8 +252,9 @@ export function getReportById(id: string, userId: string): ReportRow | undefined
     .get(id, userId) as unknown as ReportRow | undefined;
 }
 
-export function deleteReport(id: string, userId: string): void {
-  db.prepare("DELETE FROM reports WHERE id = ? AND user_id = ?").run(id, userId);
+export function deleteReport(id: string, userId: string): number {
+  const res = db.prepare("DELETE FROM reports WHERE id = ? AND user_id = ?").run(id, userId);
+  return Number(res.changes);
 }
 
 // ---------- Contadores de uso mensal (limites de plano) ----------
@@ -269,6 +270,30 @@ export function incrementUsage(userId: string, period: string, kind: string): vo
   db.prepare(
     `INSERT INTO usage_counters (user_id, period, kind, count) VALUES (?, ?, ?, 1)
      ON CONFLICT(user_id, period, kind) DO UPDATE SET count = count + 1`
+  ).run(userId, period, kind);
+}
+
+// Reserva atômica de 1 unidade de cota ANTES da chamada cara de IA (corrige a corrida
+// TOCTOU: checar-depois-consumir deixava requisições concorrentes passarem todas).
+// node:sqlite é síncrono, então o UPDATE condicional é atômico entre requisições.
+// Retorna true se havia cota e a unidade foi reservada.
+export function tryReserveUsage(userId: string, period: string, kind: string, limit: number): boolean {
+  db.prepare(
+    `INSERT INTO usage_counters (user_id, period, kind, count) VALUES (?, ?, ?, 0)
+     ON CONFLICT(user_id, period, kind) DO NOTHING`
+  ).run(userId, period, kind);
+  const res = db.prepare(
+    `UPDATE usage_counters SET count = count + 1
+     WHERE user_id = ? AND period = ? AND kind = ? AND count < ?`
+  ).run(userId, period, kind, limit);
+  return Number(res.changes) > 0;
+}
+
+// Devolve 1 unidade reservada (quando a ação falhou após a reserva).
+export function refundUsage(userId: string, period: string, kind: string): void {
+  db.prepare(
+    `UPDATE usage_counters SET count = count - 1
+     WHERE user_id = ? AND period = ? AND kind = ? AND count > 0`
   ).run(userId, period, kind);
 }
 
@@ -301,6 +326,13 @@ export function getUserByToken(token: string): UserRow | undefined {
 
 export function deleteSession(token: string): void {
   db.prepare("DELETE FROM sessions WHERE token = ?").run(token);
+}
+
+// Revoga TODAS as sessões de um usuário (logout em todos os dispositivos / resposta a
+// incidente). Retorna quantas sessões foram invalidadas.
+export function deleteSessionsByUser(userId: string): number {
+  const res = db.prepare("DELETE FROM sessions WHERE user_id = ?").run(userId);
+  return Number(res.changes);
 }
 
 // ---------- Pagamentos ----------
@@ -357,18 +389,37 @@ export function markEmailVerified(userId: string): void {
 }
 
 // ---------- Seed do administrador ----------
-// Cria (ou promove) a conta de administrador. Pode ser sobrescrito por ADMIN_EMAIL / ADMIN_PASSWORD.
+// Cria (ou promove) a conta de administrador a partir de ADMIN_EMAIL / ADMIN_PASSWORD.
+// NUNCA semeia uma senha padrão: sem credenciais explícitas e fortes, o admin não é criado
+// (em produção, o boot é abortado). A env é a fonte de verdade — a senha do admin existente
+// é re-sincronizada a cada boot, permitindo rotação.
+const WEAK_ADMIN_PASSWORDS = new Set(["adm2070", "admin", "password", "123456"]);
+
 function seedAdmin(): void {
-  const email = (process.env.ADMIN_EMAIL || "adm").trim().toLowerCase();
-  const password = process.env.ADMIN_PASSWORD || "adm2070";
+  const email = (process.env.ADMIN_EMAIL || "").trim().toLowerCase();
+  const password = process.env.ADMIN_PASSWORD || "";
+  const isProd = process.env.NODE_ENV === "production";
+
+  const refuse = (reason: string) => {
+    if (isProd) throw new Error(`[seedAdmin] ${reason} Defina ADMIN_EMAIL/ADMIN_PASSWORD fortes para iniciar em produção.`);
+    console.warn(`[seedAdmin] ${reason} Conta de administrador NÃO criada (defina credenciais fortes no .env.local).`);
+  };
+
+  if (!email || !password) {
+    return refuse("ADMIN_EMAIL/ADMIN_PASSWORD não configurados.");
+  }
+  if (WEAK_ADMIN_PASSWORDS.has(password) || password.length < 10) {
+    return refuse("ADMIN_PASSWORD é fraca ou é a senha padrão conhecida.");
+  }
 
   const existing = getUserByEmail(email);
   if (existing) {
-    // Garante que a conta semeada seja o super-admin (nível máximo), mas respeita um
-    // banimento deliberado feito pelo operador (não desbane automaticamente a cada boot).
     if (existing.role !== "superadmin") {
+      // Garante nível máximo, mas respeita um banimento deliberado do operador.
       updateUserFields(existing.id, { role: "superadmin" });
     }
+    // Rotaciona a senha para a da env (fonte de verdade), fechando senhas antigas/vazadas.
+    db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(password), existing.id);
     return;
   }
 

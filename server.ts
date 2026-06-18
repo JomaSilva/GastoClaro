@@ -73,7 +73,7 @@ async function startServer() {
   app.use("/api/usage", createUsageRouter());
   app.use("/api/checkout", createCheckoutRouter());
 
-  app.post("/api/ai/process-expenses", requirePlan("standard"), async (req, res) => {
+  app.post("/api/ai/process-expenses", requirePlan("free"), async (req, res) => {
     try {
       const user = (req as AuthedRequest).user!;
       const status = quotaStatus(user, "report");
@@ -100,7 +100,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/ai/generate-batch-signals", requirePlan("standard"), async (req, res) => {
+  app.post("/api/ai/generate-batch-signals", requirePlan("free"), async (req, res) => {
     try {
       const { marketData = [] } = req.body ?? {};
 
@@ -117,7 +117,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/ai/analyze-asset", requirePlan("standard"), async (req, res) => {
+  app.post("/api/ai/analyze-asset", requirePlan("free"), async (req, res) => {
     try {
       const user = (req as AuthedRequest).user!;
       const status = quotaStatus(user, "ai_analysis");
